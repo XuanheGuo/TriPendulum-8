@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections import defaultdict, deque
 from copy import deepcopy
 
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
@@ -27,16 +28,44 @@ def make_checkpoint_callback(save_freq: int, checkpoint_dir: str, name_prefix: s
 
 
 class EpisodeInfoCallback(BaseCallback):
-    def __init__(self, verbose=0):
+    def __init__(self, window_size=100, verbose=0):
         super().__init__(verbose)
+        self.window_size = int(window_size)
+        self.success_history = deque(maxlen=self.window_size)
+        self.collision_history = deque(maxlen=self.window_size)
+        self.goal_success_history = defaultdict(lambda: deque(maxlen=self.window_size))
 
     def _on_step(self) -> bool:
         infos = self.locals.get("infos", [])
         for info in infos:
-            if "success" in info:
-                self.logger.record("rollout/success", float(info["success"]))
-            if "track_collision" in info:
-                self.logger.record("rollout/track_collision", float(info["track_collision"]))
+            # Monitor adds "episode" only on the terminal step. Logging here
+            # avoids treating every non-terminal environment step as a failure.
+            if "episode" not in info:
+                continue
+
+            success = float(info.get("success", False))
+            collision = float(info.get("track_collision", False))
+            goal_name = str(info.get("goal_name", "unknown"))
+
+            self.success_history.append(success)
+            self.collision_history.append(collision)
+            self.goal_success_history[goal_name].append(success)
+
+            self.logger.record_mean("rollout/episode_success", success)
+            self.logger.record_mean("rollout/episode_track_collision", collision)
+            self.logger.record(
+                f"rollout/success_rate_{self.window_size}",
+                sum(self.success_history) / len(self.success_history),
+            )
+            self.logger.record(
+                f"rollout/track_collision_rate_{self.window_size}",
+                sum(self.collision_history) / len(self.collision_history),
+            )
+            goal_history = self.goal_success_history[goal_name]
+            self.logger.record(
+                f"goal_success/{goal_name}",
+                sum(goal_history) / len(goal_history),
+            )
         return True
 
 
