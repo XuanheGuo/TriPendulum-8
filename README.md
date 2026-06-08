@@ -81,13 +81,14 @@ python evaluation/evaluate.py --model checkpoints/sac_best.zip
 
 For Colab Pro, open `notebooks/colab_train.ipynb`, set the top parameter cell if needed, then run `Runtime -> Run all`. The notebook installs dependencies, checks MuJoCo, writes Colab-specific configs, starts TensorBoard, trains SAC/PPO, records dynamic diagnostic videos, evaluates all 8 goals, builds the 8x8 transition heatmap, renders a final video, and packages results.
 
-The notebook defaults to Google Drive persistence:
+The notebook defaults to Google Drive persistence while keeping high-frequency TensorBoard writes on the Colab local SSD:
 
 ```python
 USE_GOOGLE_DRIVE = True
 PROJECT_DIR = "/content/TriPendulum-8"
 DRIVE_OUTPUT_DIR = "/content/drive/MyDrive/TriPendulum-8-outputs"
 RUN_NAME = "sac_colab_pro_run"
+LOCAL_RUNTIME_DIR = "/content/TriPendulum-8-runtime"
 ```
 
 All important outputs are written under:
@@ -103,6 +104,8 @@ All important outputs are written under:
 ```
 
 This keeps model files, checkpoints, TensorBoard logs, diagnostic videos, evaluation CSV/PNG files, rendered videos, and config copies after the Colab runtime disconnects.
+
+TensorBoard should read local logs from `/content/TriPendulum-8-runtime/.../runs`, not directly from Google Drive. The notebook starts a small background sync that copies local event files to Drive every few minutes. This avoids the common Colab failure where TensorBoard shows `Data could not be loaded` while reading Drive-mounted event files.
 
 ## Diagnostic Videos
 

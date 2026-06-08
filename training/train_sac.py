@@ -27,7 +27,12 @@ def make_env(cfg):
 def make_callbacks(cfg, algo):
     checkpoint_dir = ensure_dir(cfg.get("paths", {}).get("checkpoint_dir", "checkpoints"))
     callbacks = [
-        make_checkpoint_callback(int(algo.get("save_freq", 25000)), checkpoint_dir, "sac", save_replay_buffer=True),
+        make_checkpoint_callback(
+            int(algo.get("save_freq", 25000)),
+            checkpoint_dir,
+            "sac",
+            save_replay_buffer=bool(algo.get("save_replay_buffer", False)),
+        ),
         EpisodeInfoCallback(),
     ]
     eval_cfg = cfg.get("eval", {})
