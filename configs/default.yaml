@@ -1,0 +1,41 @@
+env:
+  x_max: 1.0
+  f_max: 20.0
+  max_episode_steps: 1000
+  frame_skip: 5
+  random_initial_state: true
+  omega_limit: 40.0   # angular velocity limit in rad/s
+
+reward:
+  w_pose: 1.0
+  w_vel: 0.05       # cart velocity damping weight
+  w_act: 0.001      # control action weight
+  w_track: 0.5      # soft track boundary weight
+  w_spin: 0.02      # joint angular velocity damping weight
+  w_delta_a: 0.01   # action rate penalty weight
+  success_bonus: 50.0
+  collision_penalty: 200.0
+  overspin_penalty: 100.0
+
+success:
+  pose_threshold: 0.15          # absolute angle error threshold in rad
+  omega_threshold: 1.0         # angular velocity threshold in rad/s
+  stable_x_threshold: 0.5      # cart distance threshold
+  stable_steps_required: 50    # consecutive steps to declare success
+
+curriculum:
+  enabled: true
+  auto_advance: true
+  advance_success_rate: 0.85
+  eval_episodes: 20            # evaluate on these many episodes per goal to check for advancement
+
+analytics:
+  enabled: true
+  eval_freq: 50000
+  n_eval_episodes: 5
+  video_top_k: 3
+  generate_reports: true
+  generate_videos: true
+  mode: curriculum_worst      # fixed, all, worst, curriculum, curriculum_worst
+  save_dir: results/analytics
+  video_dir: videos/diagnostics
