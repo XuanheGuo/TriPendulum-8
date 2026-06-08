@@ -71,6 +71,7 @@ def main():
     parser.add_argument("--config", default="configs/ppo.yaml")
     parser.add_argument("--total-timesteps", type=int, default=None)
     parser.add_argument("--save-path", default="checkpoints/ppo_final.zip")
+    parser.add_argument("--resume-from", default=None)
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -79,21 +80,25 @@ def main():
     tensorboard_dir = ensure_dir(cfg.get("paths", {}).get("tensorboard_dir", "runs"))
 
     env = make_env(cfg)
-    model = PPO(
-        algo.get("policy", "MlpPolicy"),
-        env,
-        learning_rate=float(algo.get("learning_rate", 3e-4)),
-        n_steps=int(algo.get("n_steps", 2048)),
-        batch_size=int(algo.get("batch_size", 256)),
-        gamma=float(algo.get("gamma", 0.99)),
-        gae_lambda=float(algo.get("gae_lambda", 0.95)),
-        ent_coef=float(algo.get("ent_coef", 0.0)),
-        clip_range=float(algo.get("clip_range", 0.2)),
-        tensorboard_log=tensorboard_dir,
-        verbose=1,
-    )
+    if args.resume_from:
+        print(f"Resuming PPO from {args.resume_from}")
+        model = PPO.load(args.resume_from, env=env, tensorboard_log=tensorboard_dir, verbose=1)
+    else:
+        model = PPO(
+            algo.get("policy", "MlpPolicy"),
+            env,
+            learning_rate=float(algo.get("learning_rate", 3e-4)),
+            n_steps=int(algo.get("n_steps", 2048)),
+            batch_size=int(algo.get("batch_size", 256)),
+            gamma=float(algo.get("gamma", 0.99)),
+            gae_lambda=float(algo.get("gae_lambda", 0.95)),
+            ent_coef=float(algo.get("ent_coef", 0.0)),
+            clip_range=float(algo.get("clip_range", 0.2)),
+            tensorboard_log=tensorboard_dir,
+            verbose=1,
+        )
     callbacks = make_callbacks(cfg, algo)
-    model.learn(total_timesteps=total_timesteps, callback=callbacks, progress_bar=True)
+    model.learn(total_timesteps=total_timesteps, callback=callbacks, progress_bar=True, reset_num_timesteps=not bool(args.resume_from))
     model.save(args.save_path)
     env.close()
 

@@ -76,6 +76,8 @@ def main():
     parser.add_argument("--config", default="configs/sac.yaml")
     parser.add_argument("--total-timesteps", type=int, default=None)
     parser.add_argument("--save-path", default="checkpoints/sac_best.zip")
+    parser.add_argument("--resume-from", default=None)
+    parser.add_argument("--resume-replay-buffer", default=None)
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -84,23 +86,37 @@ def main():
     tensorboard_dir = ensure_dir(cfg.get("paths", {}).get("tensorboard_dir", "runs"))
 
     env = make_env(cfg)
-    model = SAC(
-        algo.get("policy", "MlpPolicy"),
-        env,
-        learning_rate=float(algo.get("learning_rate", 3e-4)),
-        buffer_size=int(algo.get("buffer_size", 500000)),
-        batch_size=int(algo.get("batch_size", 256)),
-        gamma=float(algo.get("gamma", 0.99)),
-        tau=float(algo.get("tau", 0.005)),
-        train_freq=int(algo.get("train_freq", 1)),
-        gradient_steps=int(algo.get("gradient_steps", 1)),
-        learning_starts=int(algo.get("learning_starts", 5000)),
-        ent_coef=algo.get("ent_coef", "auto"),
-        tensorboard_log=tensorboard_dir,
-        verbose=1,
-    )
+    if args.resume_from:
+        print(f"Resuming SAC from {args.resume_from}")
+        model = SAC.load(
+            args.resume_from,
+            env=env,
+            tensorboard_log=tensorboard_dir,
+            train_freq=int(algo.get("train_freq", 1)),
+            gradient_steps=int(algo.get("gradient_steps", 1)),
+            verbose=1,
+        )
+        if args.resume_replay_buffer and os.path.exists(args.resume_replay_buffer):
+            print(f"Loading replay buffer from {args.resume_replay_buffer}")
+            model.load_replay_buffer(args.resume_replay_buffer)
+    else:
+        model = SAC(
+            algo.get("policy", "MlpPolicy"),
+            env,
+            learning_rate=float(algo.get("learning_rate", 3e-4)),
+            buffer_size=int(algo.get("buffer_size", 500000)),
+            batch_size=int(algo.get("batch_size", 256)),
+            gamma=float(algo.get("gamma", 0.99)),
+            tau=float(algo.get("tau", 0.005)),
+            train_freq=int(algo.get("train_freq", 1)),
+            gradient_steps=int(algo.get("gradient_steps", 1)),
+            learning_starts=int(algo.get("learning_starts", 5000)),
+            ent_coef=algo.get("ent_coef", "auto"),
+            tensorboard_log=tensorboard_dir,
+            verbose=1,
+        )
     callbacks = make_callbacks(cfg, algo)
-    model.learn(total_timesteps=total_timesteps, callback=callbacks, progress_bar=True)
+    model.learn(total_timesteps=total_timesteps, callback=callbacks, progress_bar=True, reset_num_timesteps=not bool(args.resume_from))
     model.save(args.save_path)
     env.close()
 
