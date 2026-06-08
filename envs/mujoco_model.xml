@@ -9,8 +9,8 @@
 
   <worldbody>
     <light name="top" pos="0 0 4"/>
-    <camera name="fixed" pos="0 -6 2.2" xyaxes="1 0 0 0 0.35 0.94"/>
-    <geom name="track" type="box" pos="0 0 -0.08" size="2.4 0.03 0.02" rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>
+    <camera name="fixed" pos="0 -10 2.8" xyaxes="1 0 0 0 0.28 0.96"/>
+    <geom name="track" type="box" pos="0 0 -0.08" size="4.8 0.03 0.02" rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>
 
     <body name="cart" pos="0 0 0">
       <joint name="cart_slider" type="slide" axis="1 0 0" limited="false" damping="0.1"/>

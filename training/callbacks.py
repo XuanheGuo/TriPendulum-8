@@ -69,6 +69,113 @@ class EpisodeInfoCallback(BaseCallback):
         return True
 
 
+class AutoCurriculumCallback(BaseCallback):
+    """Advance through ordered goals after deterministic evaluation passes."""
+
+    def __init__(
+        self,
+        *,
+        curriculum_state,
+        env_config: dict,
+        reward_config: dict,
+        eval_freq: int = 25000,
+        n_eval_episodes: int = 5,
+        max_steps: int = 1000,
+        success_threshold: float = 0.8,
+        max_pose_error: float = 0.25,
+        max_collision_rate: float = 0.1,
+        consecutive_passes_required: int = 2,
+        min_steps_per_goal: int = 25000,
+        checkpoint_dir: str = "checkpoints",
+        algorithm: str = "sac",
+        verbose: int = 1,
+    ):
+        super().__init__(verbose)
+        self.state = curriculum_state
+        self.env_config = deepcopy(env_config)
+        self.reward_config = deepcopy(reward_config)
+        self.eval_freq = int(eval_freq)
+        self.n_eval_episodes = int(n_eval_episodes)
+        self.max_steps = int(max_steps)
+        self.success_threshold = float(success_threshold)
+        self.max_pose_error = float(max_pose_error)
+        self.max_collision_rate = float(max_collision_rate)
+        self.consecutive_passes_required = int(consecutive_passes_required)
+        self.min_steps_per_goal = int(min_steps_per_goal)
+        self.checkpoint_dir = checkpoint_dir
+        self.algorithm = algorithm.lower()
+        self.last_eval_timestep = 0
+
+    def _on_training_start(self) -> None:
+        self._update_training_goals()
+        if self.state.goal_start_timestep == 0:
+            self.state.goal_start_timestep = int(self.num_timesteps)
+            self.state.save()
+
+    def _on_step(self) -> bool:
+        if self.state.completed or self.eval_freq <= 0:
+            return True
+        if self.num_timesteps - self.last_eval_timestep < self.eval_freq:
+            return True
+        if self.num_timesteps - self.state.goal_start_timestep < self.min_steps_per_goal:
+            return True
+
+        self.last_eval_timestep = self.num_timesteps
+        goal = self.state.current_goal
+        metrics = evaluate_goal_metrics(
+            self.model,
+            goals=[goal],
+            episodes_per_goal=self.n_eval_episodes,
+            deterministic=True,
+            env_config=self.env_config,
+            reward_config=self.reward_config,
+            max_steps=self.max_steps,
+        )[goal]
+        passed = bool(
+            metrics["success_rate"] >= self.success_threshold
+            and metrics["avg_pose_error"] <= self.max_pose_error
+            and metrics["track_collision_rate"] <= self.max_collision_rate
+        )
+        self.state.register_evaluation(self.num_timesteps, metrics, passed)
+
+        self.logger.record("curriculum/stage_id", self.state.stage_id)
+        self.logger.record("curriculum/current_goal_index", self.state.current_index)
+        self.logger.record("curriculum/eval_success_rate", metrics["success_rate"])
+        self.logger.record("curriculum/eval_pose_error", metrics["avg_pose_error"])
+        self.logger.record("curriculum/eval_collision_rate", metrics["track_collision_rate"])
+        self.logger.record("curriculum/consecutive_passes", self.state.consecutive_passes)
+
+        if self.verbose:
+            print(
+                f"Curriculum goal {goal}: success={metrics['success_rate']:.2f}, "
+                f"pose={metrics['avg_pose_error']:.3f}, collision={metrics['track_collision_rate']:.2f}, "
+                f"passes={self.state.consecutive_passes}/{self.consecutive_passes_required}"
+            )
+
+        if self.state.consecutive_passes >= self.consecutive_passes_required:
+            completed_goal = goal
+            self.model.save(
+                os.path.join(
+                    self.checkpoint_dir,
+                    f"{self.algorithm}_curriculum_goal_{completed_goal}_step_{self.num_timesteps}.zip",
+                )
+            )
+            advanced = self.state.advance(self.num_timesteps)
+            self._update_training_goals()
+            if self.verbose:
+                if advanced:
+                    print(
+                        f"Curriculum advanced: {completed_goal} -> {self.state.current_goal}; "
+                        f"training goals={self.state.training_goals}"
+                    )
+                else:
+                    print("Curriculum complete: all ordered goals passed.")
+        return True
+
+    def _update_training_goals(self) -> None:
+        self.training_env.env_method("set_allowed_goals", self.state.training_goals)
+
+
 class DiagnosticVideoCallback(BaseCallback):
     """Evaluate current policy and render the most useful diagnostic goals."""
 
@@ -79,6 +186,7 @@ class DiagnosticVideoCallback(BaseCallback):
         env_config: dict | None = None,
         reward_config: dict | None = None,
         curriculum_config: dict | None = None,
+        curriculum_state=None,
         eval_freq: int = 50000,
         max_steps: int = 1000,
         n_eval_episodes: int = 3,
@@ -95,6 +203,7 @@ class DiagnosticVideoCallback(BaseCallback):
         self.env_config = deepcopy(env_config or {})
         self.reward_config = deepcopy(reward_config or {})
         self.curriculum_config = deepcopy(curriculum_config or {})
+        self.curriculum_state = curriculum_state
         self.eval_freq = int(eval_freq)
         self.max_steps = int(max_steps)
         self.n_eval_episodes = int(n_eval_episodes)
@@ -116,8 +225,8 @@ class DiagnosticVideoCallback(BaseCallback):
             return True
 
         self.last_eval_timestep = self.num_timesteps
-        stage_id = get_current_stage(self.curriculum_config)
-        stage_goals = get_current_goals(self.curriculum_config)
+        stage_id = get_current_stage(self.curriculum_config, self.curriculum_state)
+        stage_goals = get_current_goals(self.curriculum_config, self.curriculum_state)
         curriculum_enabled = bool(self.curriculum_config.get("enabled", False))
         eval_goals = self._select_eval_goals(curriculum_enabled, stage_goals)
         goal_metrics = evaluate_goal_metrics(
@@ -155,6 +264,8 @@ class DiagnosticVideoCallback(BaseCallback):
         if self.mode == "worst":
             return list(GOAL_NAMES)
         if self.mode == "curriculum_worst":
+            if self.curriculum_state is not None:
+                return [self.curriculum_state.current_goal]
             return list(stage_goals if curriculum_enabled else GOAL_NAMES)
         raise ValueError(f"Unknown diagnostic video mode {self.mode!r}")
 
@@ -198,6 +309,7 @@ class DiagnosticVideoCallback(BaseCallback):
             "mode": self.mode,
             "curriculum_enabled": bool(curriculum_enabled),
             "stage_id": int(stage_id),
+            "current_goal": self.curriculum_state.current_goal if self.curriculum_state is not None else None,
             "stage_goals": list(stage_goals),
             "evaluated_goals": list(eval_goals),
             "video_goals": list(video_goals),
@@ -265,6 +377,7 @@ class DiagnosticVideoCallback(BaseCallback):
             "timestep": int(self.num_timesteps),
             "curriculum_enabled": bool(curriculum_enabled),
             "stage_id": int(stage_id),
+            "current_goal": self.curriculum_state.current_goal if self.curriculum_state is not None else goal,
             "stage_goals": list(stage_goals),
             "goal": goal,
             "selection_reason": selection_reason,

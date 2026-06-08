@@ -13,18 +13,18 @@ from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.monitor import Monitor
 
 from envs.tripendulum_env import TriPendulumGoalEnv
-from training.callbacks import DiagnosticVideoCallback, EpisodeInfoCallback, make_checkpoint_callback
-from training.curriculum import apply_curriculum
+from training.callbacks import AutoCurriculumCallback, DiagnosticVideoCallback, EpisodeInfoCallback, make_checkpoint_callback
+from training.curriculum import apply_curriculum, create_curriculum_state
 from utils.logging_utils import ensure_dir, load_config
 
 
-def make_env(cfg):
-    env_cfg = apply_curriculum(cfg.get("env", {}), cfg.get("curriculum"))
+def make_env(cfg, curriculum_state=None):
+    env_cfg = apply_curriculum(cfg.get("env", {}), cfg.get("curriculum"), curriculum_state)
     env_cfg["reward"] = cfg.get("reward", {})
     return Monitor(TriPendulumGoalEnv(env_cfg))
 
 
-def make_callbacks(cfg, algo):
+def make_callbacks(cfg, algo, curriculum_state=None):
     checkpoint_dir = ensure_dir(cfg.get("paths", {}).get("checkpoint_dir", "checkpoints"))
     callbacks = [
         make_checkpoint_callback(
@@ -35,9 +35,28 @@ def make_callbacks(cfg, algo):
         ),
         EpisodeInfoCallback(),
     ]
+    curriculum_cfg = cfg.get("curriculum", {})
+    if curriculum_state is not None and curriculum_cfg.get("auto_advance", True):
+        callbacks.append(
+            AutoCurriculumCallback(
+                curriculum_state=curriculum_state,
+                env_config=cfg.get("env", {}),
+                reward_config=cfg.get("reward", {}),
+                eval_freq=int(curriculum_cfg.get("eval_freq", 25000)),
+                n_eval_episodes=int(curriculum_cfg.get("n_eval_episodes", 5)),
+                max_steps=int(curriculum_cfg.get("max_steps", 1000)),
+                success_threshold=float(curriculum_cfg.get("success_threshold", 0.8)),
+                max_pose_error=float(curriculum_cfg.get("max_pose_error", 0.25)),
+                max_collision_rate=float(curriculum_cfg.get("max_collision_rate", 0.1)),
+                consecutive_passes_required=int(curriculum_cfg.get("consecutive_passes_required", 2)),
+                min_steps_per_goal=int(curriculum_cfg.get("min_steps_per_goal", 25000)),
+                checkpoint_dir=checkpoint_dir,
+                algorithm="sac",
+            )
+        )
     eval_cfg = cfg.get("eval", {})
     if eval_cfg.get("enabled", False):
-        eval_env = make_env(cfg)
+        eval_env = make_env(cfg, curriculum_state)
         callbacks.append(
             EvalCallback(
                 eval_env,
@@ -50,13 +69,14 @@ def make_callbacks(cfg, algo):
         )
     video_cfg = cfg.get("diagnostic_video", {})
     if video_cfg.get("enabled", False):
-        env_cfg = apply_curriculum(cfg.get("env", {}), cfg.get("curriculum"))
+        env_cfg = apply_curriculum(cfg.get("env", {}), cfg.get("curriculum"), curriculum_state)
         callbacks.append(
             DiagnosticVideoCallback(
                 algorithm="sac",
                 env_config=env_cfg,
                 reward_config=cfg.get("reward", {}),
                 curriculum_config=cfg.get("curriculum", {}),
+                curriculum_state=curriculum_state,
                 eval_freq=int(video_cfg.get("eval_freq", 50000)),
                 max_steps=int(video_cfg.get("max_steps", 1000)),
                 n_eval_episodes=int(video_cfg.get("n_eval_episodes", 3)),
@@ -84,8 +104,10 @@ def main():
     algo = cfg.get("algorithm", {})
     total_timesteps = args.total_timesteps or int(algo.get("total_timesteps", 300000))
     tensorboard_dir = ensure_dir(cfg.get("paths", {}).get("tensorboard_dir", "runs"))
+    checkpoint_dir = ensure_dir(cfg.get("paths", {}).get("checkpoint_dir", "checkpoints"))
+    curriculum_state = create_curriculum_state(cfg.get("curriculum"), checkpoint_dir)
 
-    env = make_env(cfg)
+    env = make_env(cfg, curriculum_state)
     if args.resume_from:
         print(f"Resuming SAC from {args.resume_from}")
         model = SAC.load(
@@ -115,7 +137,7 @@ def main():
             tensorboard_log=tensorboard_dir,
             verbose=1,
         )
-    callbacks = make_callbacks(cfg, algo)
+    callbacks = make_callbacks(cfg, algo, curriculum_state)
     model.learn(total_timesteps=total_timesteps, callback=callbacks, progress_bar=True, reset_num_timesteps=not bool(args.resume_from))
     model.save(args.save_path)
     env.close()

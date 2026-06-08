@@ -3,14 +3,14 @@ env:
   frame_skip: 4
   render_mode: null
   seed: 42
-  x_max: 2.4
+  x_max: 4.8
   f_max: 40.0
   omega_limit: 30.0
-  stable_x_threshold: 1.8
+  stable_x_threshold: 3.2
   pose_threshold: 0.08
   omega_threshold: 1.0
   stable_steps_required: 25
-  collision_penalty: 100.0
+  collision_penalty: 250.0
   random_initial_state: false
   initial_angle_noise: 0.05
   initial_velocity_noise: 0.05
@@ -18,7 +18,7 @@ reward:
   w_pose: 4.0
   w_vel: 0.05
   w_act: 0.001
-  w_track: 1.0
+  w_track: 6.0
   w_spin: 0.02
   w_delta_a: 0.01
   lambda_x: 1.0
@@ -29,8 +29,21 @@ paths:
   checkpoint_dir: checkpoints
   tensorboard_dir: runs
 curriculum:
-  enabled: false
-  stage: 4
+  enabled: true
+  mode: sequential
+  auto_advance: true
+  goal_order: ["DDD", "DDU", "DUD", "UDD", "DUU", "UDU", "UUD", "UUU"]
+  start_index: 0
+  retain_previous_goals: true
+  resume_state: true
+  eval_freq: 10000
+  n_eval_episodes: 5
+  max_steps: 1000
+  min_steps_per_goal: 10000
+  success_threshold: 0.8
+  max_pose_error: 2.0
+  max_collision_rate: 0.2
+  consecutive_passes_required: 2
 eval:
   enabled: false
   eval_freq: 50000

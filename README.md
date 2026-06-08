@@ -154,6 +154,40 @@ These videos are intended to inspect whether the policy:
 - gets close to the absolute target pose but cannot stabilize,
 - fails because cart displacement grows too large.
 
+## Automatic Sequential Curriculum
+
+The default configuration trains goals in this order:
+
+```text
+DDD -> DDU -> DUD -> UDD -> DUU -> UDU -> UUD -> UUU
+```
+
+The current new goal is evaluated deterministically every `10000` timesteps. It advances after two consecutive evaluations satisfy the configured success, pose-error, and collision thresholds. Previously learned goals remain in the training sampler to reduce catastrophic forgetting.
+
+```yaml
+curriculum:
+  enabled: true
+  mode: sequential
+  auto_advance: true
+  retain_previous_goals: true
+  success_threshold: 0.8
+  max_collision_rate: 0.2
+  consecutive_passes_required: 2
+```
+
+Progress is persisted in `checkpoints/curriculum_state.json`. TensorBoard exposes `curriculum/stage_id`, `curriculum/eval_success_rate`, `curriculum/eval_pose_error`, `curriculum/eval_collision_rate`, and `curriculum/consecutive_passes`.
+
+Start local SAC training with:
+
+```bash
+python training/train_sac.py \
+  --config configs/sac.yaml \
+  --total-timesteps 2000000 \
+  --save-path checkpoints/sac_curriculum_final.zip
+```
+
+The default logical track is `x in [-4.8, 4.8]`. The visual XML track and camera match this range. Boundary reward weight and collision penalty are intentionally stronger so the extra room supports swing-up without making wall-running attractive.
+
 ## Extensions
 
 Planned extensions include HER, MPC/iLQR warm starts, domain randomization, system identification, observation/action delay, and sim-to-real transfer.

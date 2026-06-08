@@ -21,14 +21,14 @@ class TriPendulumConfig:
     frame_skip: int = 4
     render_mode: str | None = None
     seed: int | None = None
-    x_max: float = 2.4
+    x_max: float = 4.8
     f_max: float = 40.0
     omega_limit: float = 30.0
-    stable_x_threshold: float = 1.8
+    stable_x_threshold: float = 3.2
     pose_threshold: float = 0.08
     omega_threshold: float = 1.0
     stable_steps_required: int = 25
-    collision_penalty: float = 100.0
+    collision_penalty: float = 250.0
     random_initial_state: bool = False
     initial_angle_noise: float = 0.05
     initial_velocity_noise: float = 0.05
@@ -117,6 +117,13 @@ class TriPendulumGoalEnv(gym.Env):
         self.step_count = 0
         self.prev_action = np.zeros(1, dtype=np.float64)
         return self._get_obs(), self._base_info(track_collision=False, success=False)
+
+    def set_allowed_goals(self, goals):
+        goals = tuple(str(goal).upper() for goal in goals)
+        unknown = [goal for goal in goals if goal not in GOAL_NAMES]
+        if not goals or unknown:
+            raise ValueError(f"Invalid allowed goals: {goals}")
+        self.config.allowed_goals = goals
 
     def step(self, action):
         action = np.asarray(action, dtype=np.float64).reshape(1)

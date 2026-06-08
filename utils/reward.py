@@ -14,7 +14,7 @@ class RewardConfig:
     w_pose: float = 4.0
     w_vel: float = 0.05
     w_act: float = 0.001
-    w_track: float = 1.0
+    w_track: float = 6.0
     w_spin: float = 0.02
     w_delta_a: float = 0.01
     lambda_x: float = 1.0
@@ -23,7 +23,7 @@ class RewardConfig:
     success_bonus: float = 50.0
     pose_threshold: float = 0.08
     omega_threshold: float = 1.0
-    stable_x_threshold: float = 1.8
+    stable_x_threshold: float = 3.2
     stable_steps_required: int = 25
 
 
