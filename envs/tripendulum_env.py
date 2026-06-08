@@ -1,8 +1,14 @@
 import os
+import sys
 import yaml
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
+
+# Configure headless rendering for Linux (like Colab) before importing mujoco
+if sys.platform.startswith("linux") and "MUJOCO_GL" not in os.environ:
+    os.environ["MUJOCO_GL"] = "egl"
+
 import mujoco
 
 from envs.goals import GOAL_NAMES, get_goal, sample_goal
