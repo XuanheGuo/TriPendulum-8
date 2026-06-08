@@ -1,8 +1,14 @@
+"""Absolute goal-pose definitions for TriPendulum-8."""
+
+from __future__ import annotations
+
+import random
+from dataclasses import dataclass
+
 import numpy as np
 
-GOAL_NAMES = ["DDD", "DDU", "DUD", "UDD", "DUU", "UDU", "UUD", "UUU"]
+GOAL_NAMES = ("DDD", "DDU", "DUD", "UDD", "DUU", "UDU", "UUD", "UUU")
 
-# Binary representations
 GOAL_BINARY = {
     "DDD": np.array([0.0, 0.0, 0.0], dtype=np.float32),
     "DDU": np.array([0.0, 0.0, 1.0], dtype=np.float32),
@@ -14,44 +20,33 @@ GOAL_BINARY = {
     "UUU": np.array([1.0, 1.0, 1.0], dtype=np.float32),
 }
 
-# Absolute target angles (in radians)
 GOAL_ABS_ANGLES = {
-    "DDD": np.array([0.0, 0.0, 0.0], dtype=np.float32),
-    "DDU": np.array([0.0, 0.0, np.pi], dtype=np.float32),
-    "DUD": np.array([0.0, np.pi, 0.0], dtype=np.float32),
-    "UDD": np.array([np.pi, 0.0, 0.0], dtype=np.float32),
-    "DUU": np.array([0.0, np.pi, np.pi], dtype=np.float32),
-    "UDU": np.array([np.pi, 0.0, np.pi], dtype=np.float32),
-    "UUD": np.array([np.pi, np.pi, 0.0], dtype=np.float32),
-    "UUU": np.array([np.pi, np.pi, np.pi], dtype=np.float32),
+    name: GOAL_BINARY[name].astype(np.float64) * np.pi for name in GOAL_NAMES
 }
 
-def get_goal(name):
-    """
-    Returns a dictionary of goal specs.
-    """
+
+@dataclass(frozen=True)
+class Goal:
+    name: str
+    binary: np.ndarray
+    abs_angles: np.ndarray
+
+
+def get_goal(name: str) -> Goal:
+    name = name.upper()
     if name not in GOAL_NAMES:
-        raise ValueError(f"Unknown goal name: {name}")
-    return {
-        "name": name,
-        "binary": GOAL_BINARY[name].copy(),
-        "abs_angles": GOAL_ABS_ANGLES[name].copy(),
-    }
+        raise ValueError(f"Unknown goal {name!r}; expected one of {GOAL_NAMES}")
+    return Goal(
+        name=name,
+        binary=GOAL_BINARY[name].copy(),
+        abs_angles=GOAL_ABS_ANGLES[name].copy(),
+    )
 
-def sample_goal(allowed_goals=None):
-    """
-    Randomly samples a goal spec from a subset of allowed goals.
-    """
-    goals = allowed_goals if allowed_goals is not None else GOAL_NAMES
-    name = np.random.choice(goals)
+
+def sample_goal(rng=None, allowed_goals=None) -> Goal:
+    names = tuple(allowed_goals) if allowed_goals is not None else GOAL_NAMES
+    if rng is not None and hasattr(rng, "choice"):
+        name = str(rng.choice(names))
+    else:
+        name = random.choice(names)
     return get_goal(name)
-
-def goal_name_to_binary(name):
-    if name not in GOAL_BINARY:
-        raise ValueError(f"Unknown goal name: {name}")
-    return GOAL_BINARY[name].copy()
-
-def goal_name_to_abs_angles(name):
-    if name not in GOAL_ABS_ANGLES:
-        raise ValueError(f"Unknown goal name: {name}")
-    return GOAL_ABS_ANGLES[name].copy()

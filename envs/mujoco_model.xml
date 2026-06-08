@@ -1,70 +1,37 @@
 <mujoco model="tripendulum_8">
-    <compiler inertiafromgeom="true" coordinate="local" angle="degree"/>
-    
-    <option timestep="0.002" gravity="0 0 -9.81" integrator="RK4"/>
-    
-    <default>
-        <!-- Damping and armature to model friction and joint motor inertia -->
-        <joint damping="0.01" armature="0.01" limited="false"/>
-        <!-- Contype and conaffinity 0 prevents self-collisions, since links are offset in parallel planes -->
-        <geom contype="0" conaffinity="0" friction="1 0.1 0.1"/>
-        <motor ctrllimited="true"/>
-    </default>
+  <compiler angle="radian" coordinate="local"/>
+  <option timestep="0.005" gravity="0 0 -9.81" integrator="RK4"/>
 
-    <asset>
-        <!-- Visual assets for premium rendering -->
-        <texture type="skybox" builtin="gradient" rgb1="0.1 0.1 0.15" rgb2="0.02 0.02 0.05" width="512" height="512"/>
-        <texture name="grid" type="2d" builtin="checker" rgb1="0.1 0.1 0.12" rgb2="0.15 0.15 0.18" width="512" height="512" mark="edge" markrgb="0.2 0.2 0.25"/>
-        <material name="grid_floor" texture="grid" texrepeat="2 2" texuniform="true" reflectance="0.1"/>
-        
-        <material name="cart_mat" rgba="0.1 0.6 0.9 1" shininess="0.8" specular="0.5"/>
-        <material name="pole1_mat" rgba="0.0 0.9 0.6 1" shininess="0.9" specular="0.7"/>
-        <material name="pole2_mat" rgba="0.9 0.1 0.5 1" shininess="0.9" specular="0.7"/>
-        <material name="pole3_mat" rgba="0.9 0.8 0.1 1" shininess="0.9" specular="0.7"/>
-        <material name="rail_mat" rgba="0.4 0.4 0.45 1" shininess="0.5" specular="0.2"/>
-    </asset>
+  <default>
+    <joint damping="0.02" frictionloss="0.001" armature="0.001"/>
+    <geom rgba="0.2 0.4 0.8 1" contype="0" conaffinity="0"/>
+  </default>
 
-    <worldbody>
-        <!-- Lights for 3D depth -->
-        <light pos="0 0 4" dir="0 0 -1" castshadow="true"/>
-        <light pos="2 2 3" dir="-0.5 -0.5 -1" castshadow="false" diffuse="0.4 0.4 0.4"/>
-        <light pos="-2 -2 3" dir="0.5 0.5 -1" castshadow="false" diffuse="0.3 0.3 0.3"/>
+  <worldbody>
+    <light name="top" pos="0 0 4"/>
+    <camera name="fixed" pos="0 -6 2.2" xyaxes="1 0 0 0 0.35 0.94"/>
+    <geom name="track" type="box" pos="0 0 -0.08" size="2.4 0.03 0.02" rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>
 
-        <!-- Floor Grid -->
-        <geom name="floor" type="plane" pos="0 0 -1.5" size="10 10 0.1" material="grid_floor"/>
+    <body name="cart" pos="0 0 0">
+      <joint name="cart_slider" type="slide" axis="1 0 0" limited="false" damping="0.1"/>
+      <geom name="cart_geom" type="box" size="0.16 0.08 0.08" rgba="0.8 0.2 0.2 1" contype="0" conaffinity="0"/>
 
-        <!-- Guide Rails -->
-        <geom name="rail" type="capsule" fromto="-2.0 0 0 2.0 0 0" size="0.02" material="rail_mat"/>
-
-        <!-- The Cart-Triple Pendulum System -->
-        <!-- Joint range for slider set to -2.0 to 2.0, environment logic will enforce x_max = 1.0 -->
-        <body name="cart" pos="0 0 0">
-            <joint name="slider" type="slide" axis="1 0 0" damping="0.1" range="-2.1 2.1" limited="true"/>
-            <geom name="cart_geom" type="box" size="0.12 0.06 0.05" material="cart_mat" mass="1.0"/>
-            
-            <!-- Link 1 -->
-            <body name="pole1" pos="0 0 0">
-                <joint name="hinge1" type="hinge" axis="0 1 0"/>
-                <!-- Capsule going downwards by default (q1=0, theta_abs=0 is Down) -->
-                <geom name="pole1_geom" type="capsule" fromto="0 0 0 0 0 -0.4" size="0.015" material="pole1_mat" mass="0.2"/>
-                
-                <!-- Link 2 -->
-                <body name="pole2" pos="0 0 -0.4">
-                    <joint name="hinge2" type="hinge" axis="0 1 0"/>
-                    <geom name="pole2_geom" type="capsule" fromto="0 0 0 0 0 -0.4" size="0.012" material="pole2_mat" mass="0.2"/>
-                    
-                    <!-- Link 3 -->
-                    <body name="pole3" pos="0 0 -0.4">
-                        <joint name="hinge3" type="hinge" axis="0 1 0"/>
-                        <geom name="pole3_geom" type="capsule" fromto="0 0 0 0 0 -0.4" size="0.01" material="pole3_mat" mass="0.2"/>
-                    </body>
-                </body>
-            </body>
+      <body name="link1" pos="0 0 -0.08">
+        <joint name="hinge1" type="hinge" axis="0 1 0" limited="false" damping="0.01"/>
+        <geom name="link1_geom" type="capsule" fromto="0 0 0 0 0 -0.55" size="0.025" rgba="0.1 0.45 0.9 1" contype="0" conaffinity="0"/>
+        <body name="link2" pos="0 0 -0.55">
+          <joint name="hinge2" type="hinge" axis="0 1 0" limited="false" damping="0.01"/>
+          <geom name="link2_geom" type="capsule" fromto="0 0 0 0 0 -0.45" size="0.022" rgba="0.1 0.75 0.35 1" contype="0" conaffinity="0"/>
+          <body name="link3" pos="0 0 -0.45">
+            <joint name="hinge3" type="hinge" axis="0 1 0" limited="false" damping="0.01"/>
+            <geom name="link3_geom" type="capsule" fromto="0 0 0 0 0 -0.35" size="0.02" rgba="0.9 0.65 0.1 1" contype="0" conaffinity="0"/>
+          </body>
         </body>
-    </worldbody>
+      </body>
+    </body>
+  </worldbody>
 
-    <actuator>
-        <!-- Input force applied horizontally on the cart slider joint -->
-        <motor name="cart_thrust" joint="slider" gear="1.0" ctrlrange="-20 20" ctrllimited="true"/>
-    </actuator>
+  <actuator>
+    <motor name="cart_force" joint="cart_slider" gear="1" ctrllimited="true" ctrlrange="-40 40"/>
+  </actuator>
 </mujoco>

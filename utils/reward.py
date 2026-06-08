@@ -1,96 +1,98 @@
+"""Reward and success logic based on absolute pendulum poses."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
 import numpy as np
 
+from utils.angle_utils import angle_error
+
+
+@dataclass
+class RewardConfig:
+    w_pose: float = 4.0
+    w_vel: float = 0.05
+    w_act: float = 0.001
+    w_track: float = 1.0
+    w_spin: float = 0.02
+    w_delta_a: float = 0.01
+    lambda_x: float = 1.0
+    lambda_omega: float = 1.0
+    lambda_delta_a: float = 1.0
+    success_bonus: float = 50.0
+    pose_threshold: float = 0.08
+    omega_threshold: float = 1.0
+    stable_x_threshold: float = 1.8
+    stable_steps_required: int = 25
+
+
+def pose_error_components(theta_abs, theta_goal_abs):
+    err = angle_error(theta_abs, theta_goal_abs)
+    return 1.0 - np.cos(err)
+
+
 def compute_reward(
+    *,
+    goal_name,
     theta_abs,
     theta_goal_abs,
-    x,
-    x_dot,
+    q_relative,
     omega,
     action,
-    last_action,
+    prev_action,
+    x,
     x_max,
-    weights,
-    success,
-    collision,
-    overspin
+    stable_steps,
+    track_collision,
+    cfg: RewardConfig,
 ):
-    """
-    Computes the reward and its constituent parts for debugging and logging.
-    
-    Args:
-        theta_abs (np.ndarray): Absolute angles of the three links, shape (3,)
-        theta_goal_abs (np.ndarray): Target absolute angles, shape (3,)
-        x (float): Cart position
-        x_dot (float): Cart velocity
-        omega (np.ndarray): Pendulum joint angular velocities, shape (3,)
-        action (np.ndarray): Current action applied to cart, shape (1,)
-        last_action (np.ndarray or None): Previous action applied to cart, shape (1,)
-        x_max (float): Track limit
-        weights (dict): Weight parameters dictionary containing w_pose, w_vel, w_act, etc.
-        success (bool): Whether the success stabilization criteria are met
-        collision (bool): Whether the cart hit the boundary
-        overspin (bool): Whether joint velocity limits were exceeded
-        
-    Returns:
-        reward (float): Combined scalar reward
-        components (dict): Dict of float values for each component reward/penalty term
-    """
-    # 1. Pose error based on cosine distance of absolute angles (range: 0 to 2 per link, total 0 to 6)
-    r_pose = np.sum(1.0 - np.cos(theta_abs - theta_goal_abs))
-    
-    # 2. Cart velocity damping
-    r_vel = x_dot ** 2
-    
-    # 3. Action magnitude penalty (energy consumption)
-    act_val = float(action[0])
-    r_act = act_val ** 2
-    
-    # 4. Continuous soft track limit penalty
-    r_track = (abs(x) / x_max) ** 2
-    
-    # 5. Joint spin damping (stabilizes wild rotations)
-    r_spin = np.sum(omega ** 2)
-    
-    # 6. Smoothness penalty (action rate of change)
-    if last_action is not None:
-        last_act_val = float(last_action[0])
-        r_delta_a = (act_val - last_act_val) ** 2
-    else:
-        r_delta_a = 0.0
-        
-    # Scale components by their weights
-    term_pose = weights.get('w_pose', 1.0) * r_pose
-    term_vel = weights.get('w_vel', 0.05) * r_vel
-    term_act = weights.get('w_act', 0.001) * r_act
-    term_track = weights.get('w_track', 0.5) * r_track
-    term_spin = weights.get('w_spin', 0.02) * r_spin
-    term_delta_a = weights.get('w_delta_a', 0.01) * r_delta_a
-    
-    # Discontinuous rewards / penalties
-    bonus_success = weights.get('success_bonus', 50.0) if success else 0.0
-    penalty_collision = weights.get('collision_penalty', 200.0) if collision else 0.0
-    penalty_overspin = weights.get('overspin_penalty', 100.0) if overspin else 0.0
-    
-    # Combined reward
-    total_reward = -(term_pose + term_vel + term_act + term_track + term_spin + term_delta_a)
-    total_reward += bonus_success - penalty_collision - penalty_overspin
-    
-    components = {
-        "r_pose": float(r_pose),
-        "r_vel": float(r_vel),
-        "r_act": float(r_act),
-        "r_track": float(r_track),
-        "r_spin": float(r_spin),
-        "r_delta_a": float(r_delta_a),
-        "term_pose": float(term_pose),
-        "term_vel": float(term_vel),
-        "term_act": float(term_act),
-        "term_track": float(term_track),
-        "term_spin": float(term_spin),
-        "term_delta_a": float(term_delta_a),
-        "bonus_success": float(bonus_success),
-        "penalty_collision": float(penalty_collision),
-        "penalty_overspin": float(penalty_overspin)
+    theta_abs = np.asarray(theta_abs, dtype=np.float64)
+    theta_goal_abs = np.asarray(theta_goal_abs, dtype=np.float64)
+    q_relative = np.asarray(q_relative, dtype=np.float64)
+    omega = np.asarray(omega, dtype=np.float64)
+    action = np.asarray(action, dtype=np.float64)
+    prev_action = np.asarray(prev_action, dtype=np.float64)
+
+    pose_terms = pose_error_components(theta_abs, theta_goal_abs)
+    r_pose = float(np.sum(pose_terms))
+    r_vel = float(np.sum(np.square(omega)))
+    r_act = float(np.sum(np.square(action)))
+    r_track = float(cfg.lambda_x * (abs(float(x)) / float(x_max)) ** 2)
+    r_spin = float(cfg.lambda_omega * np.sum(np.square(omega)))
+    r_delta_a = float(cfg.lambda_delta_a * np.sum(np.square(action - prev_action)))
+
+    pose_ready = r_pose < cfg.pose_threshold
+    velocity_ready = float(np.max(np.abs(omega))) < cfg.omega_threshold
+    cart_ready = abs(float(x)) < cfg.stable_x_threshold
+    stable_now = bool(pose_ready and velocity_ready and cart_ready and not track_collision)
+    next_stable_steps = stable_steps + 1 if stable_now else 0
+    success = next_stable_steps >= cfg.stable_steps_required
+    success_bonus = cfg.success_bonus if success else 0.0
+
+    reward = (
+        -cfg.w_pose * r_pose
+        - cfg.w_vel * r_vel
+        - cfg.w_act * r_act
+        - cfg.w_track * r_track
+        - cfg.w_spin * r_spin
+        - cfg.w_delta_a * r_delta_a
+        + success_bonus
+    )
+
+    info = {
+        "goal_name": goal_name,
+        "theta_abs": theta_abs.copy(),
+        "theta_goal_abs": theta_goal_abs.copy(),
+        "q_relative": q_relative.copy(),
+        "r_pose": r_pose,
+        "r_vel": r_vel,
+        "r_act": r_act,
+        "r_track": r_track,
+        "r_spin": r_spin,
+        "r_delta_a": r_delta_a,
+        "success": success,
+        "stable_steps": next_stable_steps,
+        "track_collision": bool(track_collision),
     }
-    
-    return float(total_reward), components
+    return float(reward), success, next_stable_steps, info

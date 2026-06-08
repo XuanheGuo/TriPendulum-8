@@ -1,137 +1,137 @@
-import os
+from __future__ import annotations
+
 import argparse
-import yaml
+import os
+import sys
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
 import numpy as np
-from tabulate import tabulate
-from stable_baselines3 import SAC, PPO
+import pandas as pd
+from stable_baselines3 import PPO, SAC
 
-from envs.tripendulum_env import TriPendulumGoalEnv
 from envs.goals import GOAL_NAMES
-from analytics.metrics import aggregate_episode_metrics
-from utils.logging_utils import setup_logger
+from envs.tripendulum_env import TriPendulumGoalEnv
 
-logger = setup_logger("evaluate")
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Evaluate TriPendulum-8 policy")
-    parser.add_argument("--model", type=str, required=True, help="Path to SB3 policy zip file")
-    parser.add_argument("--config", type=str, default=None, help="Path to config YAML")
-    parser.add_argument("--episodes", type=int, default=20, help="Number of episodes to evaluate per goal")
-    parser.add_argument("--stage", type=int, default=5, help="Curriculum stage context for evaluation (5 = random start, 6 = dynamic)")
-    return parser.parse_args()
-
-def load_policy(model_path, env):
-    """
-    Attempts to load the model file automatically determining if it is SAC or PPO.
-    """
-    filename = os.path.basename(model_path).lower()
-    if "sac" in filename:
-        logger.info(f"Loading SAC model from {model_path}...")
-        return SAC.load(model_path, env=env)
-    elif "ppo" in filename:
-        logger.info(f"Loading PPO model from {model_path}...")
-        return PPO.load(model_path, env=env)
-        
-    # Fallback check inside zip structure or prompt user (here we try both)
+def load_model(path, env):
     try:
-        logger.info(f"Trying to load model as SAC...")
-        return SAC.load(model_path, env=env)
+        return SAC.load(path, env=env)
     except Exception:
-        try:
-            logger.info(f"Trying to load model as PPO...")
-            return PPO.load(model_path, env=env)
-        except Exception as e:
-            raise ValueError(f"Could not load policy as SAC or PPO: {e}")
+        return PPO.load(path, env=env)
+
+
+def evaluate_goal_metrics(
+    model,
+    goals=None,
+    episodes_per_goal=5,
+    deterministic=True,
+    env_config=None,
+    reward_config=None,
+    max_steps=None,
+):
+    goals = list(goals or GOAL_NAMES)
+    env_cfg = dict(env_config or {})
+    if reward_config is not None:
+        env_cfg["reward"] = reward_config
+    env = TriPendulumGoalEnv(env_cfg if env_cfg else None)
+    goal_metrics = {}
+    try:
+        for goal in goals:
+            stats = []
+            for _ in range(episodes_per_goal):
+                obs, _ = env.reset(goal=goal)
+                total_reward = 0.0
+                energy = 0.0
+                max_abs_x = 0.0
+                collisions = 0
+                pose_errors = []
+                stable_time = 0
+                success = False
+                terminated = truncated = False
+                episode_length = 0
+                while not (terminated or truncated):
+                    if max_steps is not None and episode_length >= max_steps:
+                        truncated = True
+                        break
+                    action, _ = model.predict(obs, deterministic=deterministic)
+                    obs, reward, terminated, truncated, info = env.step(action)
+                    episode_length += 1
+                    total_reward += float(reward)
+                    energy += float(info.get("r_act", 0.0))
+                    stable_time = max(stable_time, int(info.get("stable_steps", 0)))
+                    max_abs_x = max(max_abs_x, abs(float(info.get("x", 0.0))))
+                    collisions += int(info.get("track_collision", False))
+                    pose_errors.append(float(info.get("r_pose", np.nan)))
+                    success = success or bool(info.get("success", False))
+                stats.append(
+                    {
+                        "success": float(success),
+                        "reward": total_reward,
+                        "pose_error": float(np.nanmean(pose_errors)) if pose_errors else float("nan"),
+                        "episode_length": episode_length,
+                        "stable_time": stable_time,
+                        "energy": energy,
+                        "max_abs_x": max_abs_x,
+                        "track_collision": float(collisions > 0),
+                    }
+                )
+            goal_metrics[goal] = {
+                "success_rate": float(np.mean([s["success"] for s in stats])),
+                "avg_reward": float(np.mean([s["reward"] for s in stats])),
+                "avg_pose_error": float(np.nanmean([s["pose_error"] for s in stats])),
+                "avg_episode_length": float(np.mean([s["episode_length"] for s in stats])),
+                "avg_stable_time": float(np.mean([s["stable_time"] for s in stats])),
+                "track_collision_rate": float(np.mean([s["track_collision"] for s in stats])),
+                "max_abs_x": float(np.max([s["max_abs_x"] for s in stats])),
+                "avg_energy": float(np.mean([s["energy"] for s in stats])),
+            }
+    finally:
+        env.close()
+    return goal_metrics
+
+
+def evaluate_model(model, episodes_per_goal=5, deterministic=True, goals=None):
+    metrics = evaluate_goal_metrics(
+        model,
+        goals=goals or GOAL_NAMES,
+        episodes_per_goal=episodes_per_goal,
+        deterministic=deterministic,
+    )
+    rows = []
+    for goal, goal_metrics in metrics.items():
+        rows.append(
+            {
+                "goal": goal,
+                "success_rate": goal_metrics["success_rate"],
+                "average_reward": goal_metrics["avg_reward"],
+                "average_pose_error": goal_metrics["avg_pose_error"],
+                "average_stable_time": goal_metrics["avg_stable_time"],
+                "average_energy": goal_metrics["avg_energy"],
+                "average_max_cart_displacement": goal_metrics["max_abs_x"],
+                "track_collision_count": goal_metrics["track_collision_rate"] * episodes_per_goal,
+            }
+        )
+    return pd.DataFrame(rows)
+
 
 def main():
-    args = parse_args()
-    
-    # Load environment configuration
-    curr_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.abspath(os.path.join(curr_dir, ".."))
-    config_path = args.config if args.config else os.path.join(project_root, "configs", "default.yaml")
-    
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
-        
-    env_cfg = config.get("env", {})
-    dt = env_cfg.get("frame_skip", 5) * 0.002
-    
-    # Create environment
-    env = TriPendulumGoalEnv(config_path=config_path, render_mode="rgb_array")
-    
-    # Load policy
-    try:
-        model = load_policy(args.model, env)
-    except Exception as e:
-        logger.error(f"Error loading model: {e}")
-        env.close()
-        return
-        
-    logger.info(f"Evaluating policy on all 8 goals ({args.episodes} episodes each, Curriculum Stage {args.stage})...")
-    
-    results = []
-    
-    for goal_name in GOAL_NAMES:
-        env.set_curriculum_stage(args.stage)
-        episode_logs = []
-        
-        for ep in range(args.episodes):
-            obs, info = env.reset(goal=goal_name)
-            
-            reward_sum = 0.0
-            length = 0
-            pose_errors = []
-            energies = []
-            
-            terminated = False
-            truncated = False
-            
-            while not (terminated or truncated):
-                action, _ = model.predict(obs, deterministic=True)
-                obs, reward, terminated, truncated, info = env.step(action)
-                
-                reward_sum += reward
-                length += 1
-                pose_errors.append(info.get("pose_error", 0.0))
-                energies.append(info.get("r_act", 0.0))
-                
-            episode_logs.append({
-                "reward_sum": reward_sum,
-                "length": length,
-                "success": bool(info.get("success", False)),
-                "collision": bool(info.get("track_collision", False)),
-                "overspin": bool(info.get("overspin", False)),
-                "pose_errors": pose_errors,
-                "energies": energies,
-                "max_abs_x": float(info.get("max_abs_x", 0.0)),
-                "stable_steps": int(info.get("stable_steps", 0)),
-                "final_pose_error": float(info.get("pose_error", 0.0))
-            })
-            
-        # Aggregate metrics
-        m = aggregate_episode_metrics(episode_logs, dt=dt)
-        results.append([
-            goal_name,
-            f"{m['success_rate']:.1%}",
-            f"{m['average_reward']:.1f}",
-            f"{m['average_pose_error']:.3f}",
-            f"{m['stability_time']:.2f}s",
-            f"{m['average_energy']:.3f}",
-            f"{m['average_max_cart_displacement']:.2f}m",
-            f"{m['track_collision_rate']:.1%}",
-            f"{m['overspin_rate']:.1%}"
-        ])
-        
-    # Print results table
-    headers = [
-        "Goal", "Success Rate", "Avg Reward", "Avg Pose Err", 
-        "Stable Duration", "Avg Energy", "Max Cart Disp", "Collision Rate", "Overspin Rate"
-    ]
-    print("\n" + tabulate(results, headers=headers, tablefmt="grid") + "\n")
-    
-    # Close environment
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", required=True)
+    parser.add_argument("--episodes-per-goal", type=int, default=5)
+    parser.add_argument("--goals", nargs="*", default=None)
+    parser.add_argument("--output", default="evaluation_results.csv")
+    args = parser.parse_args()
+
+    env = TriPendulumGoalEnv()
+    model = load_model(args.model, env)
     env.close()
+    df = evaluate_model(model, args.episodes_per_goal, goals=args.goals)
+    df.to_csv(args.output, index=False)
+    print(df.to_string(index=False))
+
 
 if __name__ == "__main__":
     main()

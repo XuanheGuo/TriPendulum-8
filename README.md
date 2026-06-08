@@ -1,166 +1,156 @@
 # TriPendulum-8
 
-Goal-Conditioned Reinforcement Learning controller for a Cart-Triple Pendulum system under MuJoCo and Gymnasium. 
+TriPendulum-8 is a Goal-Conditioned reinforcement learning project for a cart-mounted serial triple inverted pendulum. The system has one active actuator only: horizontal force on the cart.
 
-This repository implements a **single-actuator, three-passive-hinge** underactuated control system. The goal is to swing up and stabilize the three links in any of the **8 absolute upright/downward configurations** while keeping the cart within rail boundaries.
+The action is strictly:
 
----
-
-## 1. System Physics & Underactuation
-
-In this setup:
-* **Actuation**: The action space is strictly 1-dimensional, containing only the horizontal thrust force applied to the cart: `action = [F_cart]`. 
-* **Passive Joints**: All three joints between the cart and the poles are passive hinge joints. No joint actuators (torques) are applied to the pendulum links.
-* **Underactuation**: The system has 4 degrees of freedom (cart position + 3 joint angles) but only 1 control input. Stabilizing this system requires transferring energy from the cart's translation to the links' rotation through dynamic swing-up and stabilization.
-
----
-
-## 2. Coordinate Conventions: Relative vs. Absolute
-
-* **MuJoCo Dynamics**: MuJoCo coordinates are naturally relative. The configuration qpos contains:
-  * $q_1$: Angle of Pole 1 relative to the vertical axis.
-  * $q_2$: Angle of Pole 2 relative to Pole 1.
-  * $q_3$: Angle of Pole 3 relative to Pole 2.
-* **Absolute Angles**: Physical target configurations (e.g., upright vs. downward) are defined in the global world frame (absolute angles $\theta_{\text{abs}}$):
-  * $\theta_{1, \text{abs}} = q_1$
-  * $\theta_{2, \text{abs}} = q_1 + q_2$
-  * $\theta_{3, \text{abs}} = q_1 + q_2 + q_3$
-* **Observation Input**: The agent is provided with sines/cosines of both relative angles (vital for forward dynamics modeling) and absolute angles (vital for mapping targets to the current global state) to simplify function approximation in Neural Networks.
-
----
-
-## 3. The 8 Target Poses (DDD to UUU)
-
-Target configurations are labeled by link orientations: **D (Down = 0)** and **U (Up = $\pi$)**.
-
-| Goal Name | Binary Coding | Absolute Angles ($\theta_1, \theta_2, \theta_3$) | Orientation |
-|---|---|---|---|
-| **DDD** | `[0, 0, 0]` | $[0, 0, 0]$ | Hanging vertically down (stable equilibrium) |
-| **DDU** | `[0, 0, 1]` | $[0, 0, \pi]$ | First two down, third pointing up |
-| **DUD** | `[0, 1, 0]` | $[0, \pi, 0]$ | Second up, outer links down |
-| **UDD** | `[1, 0, 0]` | $[\pi, 0, 0]$ | First up, outer links down |
-| **DUU** | `[0, 1, 1]` | $[0, \pi, \pi]$ | First down, outer two up |
-| **UDU** | `[1, 0, 1]` | $[\pi, 0, \pi]$ | Alternating up, down, up |
-| **UUD** | `[1, 1, 0]` | $[\pi, \pi, 0]$ | Inner two up, third down |
-| **UUU** | `[1, 1, 1]` | $[\pi, \pi, \pi]$ | Fully upright (unstable equilibrium) |
-
----
-
-## 4. Physical Layout & Self-Collisions
-
-* **摆杆错层 (Offset Parallel Planes)**: Real-world triple pendulums are constructed in offset parallel planes (layers) to avoid collision when links rotate past each other. 
-* **Self-Collisions**: Accordingly, we do **not** enable contact geoms or self-collision penalties between the pendulum links in the MuJoCo XML, allowing them to swing past each other smoothly.
-
----
-
-## 5. Environment Boundaries & Constraints
-
-* **Rail limits**: The cart is restricted to $x \in [-x_{\text{max}}, x_{\text{max}}]$ where $x_{\text{max}} = 1.0\text{m}$.
-* **Track boundary penalty**: A continuous soft penalty $(x/x_{\text{max}})^2$ discourages the cart from staying close to the edges.
-* **Rail collision**: If $|x| > x_{\text{max}}$, the episode is terminated, and a large collision penalty is deducted.
-* **Overspin limit**: If any link's joint velocity exceeds $\omega_{\text{limit}} = 40.0\text{ rad/s}$, the episode is terminated to prevent physical damage and simulation blowup.
-
----
-
-## 6. Reward Structure
-
-The composite reward function is calculated at each step:
-
-$$R = - (w_{\text{pose}} \cdot r_{\text{pose}} + w_{\text{vel}} \cdot r_{\text{vel}} + w_{\text{act}} \cdot r_{\text{act}} + w_{\text{track}} \cdot r_{\text{track}} + w_{\text{spin}} \cdot r_{\text{spin}} + w_{\text{delta\_a}} \cdot r_{\text{delta\_a}}) + R_{\text{success}} - R_{\text{collision}} - R_{\text{overspin}}$$
-
-Where:
-* **Pose Error**: $r_{\text{pose}} = \sum_{i=1}^3 (1 - \cos(\theta_{i,\text{abs}} - \theta_{i,\text{goal}}))$
-* **Cart Velocity Damping**: $r_{\text{vel}} = \dot{x}^2$
-* **Control effort**: $r_{\text{act}} = u^2$
-* **Continuous track penalty**: $r_{\text{track}} = (x/x_{\text{max}})^2$
-* **Joint velocity damping**: $r_{\text{spin}} = \sum_i \omega_i^2$
-* **Action rate penalty**: $r_{\text{delta\_a}} = (u_t - u_{t-1})^2$
-* **Stabilization success criteria**: Max absolute angle error $< 0.15\text{ rad}$, max link velocity $< 1.0\text{ rad/s}$, and cart displacement $< 0.5\text{m}$ sustained for **50 consecutive steps**.
-
----
-
-## 7. Curriculum Learning Stages
-
-To guide learning from simple stabilizing to global swing-up and dynamic target tracking, the training process is divided into 6 stages:
-
-1. **Stage 1**: Train on **DDD** and **UUU** only, starting from a hanging-down state.
-2. **Stage 2**: Introduce single-up goals (**DDU**, **DUD**, **UDD**), starting near DDD.
-3. **Stage 3**: Introduce double-up goals (**DUU**, **UDU**, **UUD**), starting near DDD.
-4. **Stage 4**: Learn to stabilize all **8 goals**, starting near DDD.
-5. **Stage 5**: Learn to stabilize all **8 goals** starting from **fully random initial states** (global recovery).
-6. **Stage 6**: **Dynamic tracking** task where the target goal changes every 200 steps within the same episode.
-
-The curriculum advances automatically when the evaluation success rate of the current stage goals exceeds **85%**.
-
----
-
-## 8. Built-in Analytics & Worst-Goal Diagnostic Videos
-
-The callback evaluates the policy every `eval_freq = 50,000` steps:
-1. **Multi-Goal Evaluation**: Computes success rates, energy efficiency, and durations across all 8 goals.
-2. **Learning Bug Detection**:
-   * **Reward Hacking**: Flags if reward is climbing but success rate is dropping, or if control energy/collisions spike to cheat the pose reward.
-   * **Catastrophic Forgetting**: Flags if previously mastered goals drop below 50% success rate.
-3. **Worst-Goal Selector**: Selects the goals with the lowest success rates, runs rollouts to record **diagnostic MP4 videos** (with state data overlay) and JSON metadata.
-4. **Report Generation**: Outputs `report_step_XXXXXX.md` progress summaries.
-
----
-
-## 9. Code Usage
-
-### Dependencies
-Install package and requirements:
-```bash
-pip install -e .
+```text
+action = [F_cart]
 ```
 
-### Training PPO
-```bash
-python training/train_ppo.py --total-timesteps 1000000
+No active torque is applied to any pendulum hinge joint. The MuJoCo model exposes passive hinge joints for the three links and a single motor actuator on the cart slider.
+
+## Angle Convention
+
+MuJoCo stores native relative joint angles:
+
+- `q1`: link 1 relative to the cart/world vertical down reference
+- `q2`: link 2 relative to link 1
+- `q3`: link 3 relative to link 2
+
+Goal poses are defined by absolute link angles in world coordinates:
+
+```python
+theta1_abs = q1
+theta2_abs = q1 + q2
+theta3_abs = q1 + q2 + q3
 ```
 
-### Training SAC (Recommended)
-```bash
-python training/train_sac.py --total-timesteps 1000000
+Names such as `DDD`, `DUD`, and `UUU` refer to the three physical pendulum links' absolute world orientations, not the three relative hinge angles.
+
+## Goals
+
+`D = Down = 0`, `U = Up = pi`.
+
+The eight goal poses are:
+
+- `DDD = [0, 0, 0]`
+- `DDU = [0, 0, pi]`
+- `DUD = [0, pi, 0]`
+- `UDD = [pi, 0, 0]`
+- `DUU = [0, pi, pi]`
+- `UDU = [pi, 0, pi]`
+- `UUD = [pi, pi, 0]`
+- `UUU = [pi, pi, pi]`
+
+Reward, success checks, evaluation metrics, and transition tests are all based on these absolute angles.
+
+## Physical Constraints
+
+The cart track is finite: `x in [-x_max, x_max]`. The environment applies a continuous boundary penalty and terminates with a collision penalty when the cart exceeds this range. This prevents policies from relying on an unrealistic infinite track or extreme cart runs.
+
+The real device is modeled as staggered multi-layer pendulum hardware, so the links are not treated as coplanar rods. For that reason:
+
+- no inter-link self-collision penalty is used,
+- visual link crossing is not considered a collision,
+- inter-link geometric overlap does not terminate an episode,
+- the MuJoCo XML does not enable pendulum self-collision termination.
+
+The main simulation constraints are cart track boundaries, cart force limits, action-rate penalty, angular-velocity limits, energy cost, and optional future noise/delay/randomization.
+
+## Algorithms
+
+- PPO is provided as a baseline.
+- SAC is the main continuous-control algorithm.
+
+Both train a goal-conditioned policy:
+
+```text
+policy(obs, goal_binary) -> F_cart
 ```
-Arguments:
-* `--resume`: Resume training from the best saved checkpoint in `checkpoints/`.
-* `--total-timesteps N`: Override total training timesteps.
 
-### Evaluation
-Evaluate a trained model across all 8 goals:
+## Quick Start
+
 ```bash
-python evaluation/evaluate.py --model checkpoints/sac_best.zip --episodes 20
+pip install -r requirements.txt
+
+python training/train_ppo.py --config configs/ppo.yaml
+python training/train_sac.py --config configs/sac.yaml
+python evaluation/evaluate.py --model checkpoints/sac_best.zip
 ```
 
-### 8x8 Transition Matrix
-Evaluate the controller's capacity to switch from any goal to another:
-```bash
-python evaluation/transition_matrix.py --model checkpoints/sac_best.zip --trials 3
-```
-Produces:
-* `results/transition_matrix.csv`
-* `results/transition_heatmap.png`
-* `results/transition_report.json`
+For Colab Pro, open `notebooks/colab_train.ipynb`, set the top parameter cell if needed, then run `Runtime -> Run all`. The notebook installs dependencies, checks MuJoCo, writes Colab-specific configs, starts TensorBoard, trains SAC/PPO, records dynamic diagnostic videos, evaluates all 8 goals, builds the 8x8 transition heatmap, renders a final video, and packages results.
 
-### Robustness Test
-Stress test under cart impulses, sensor noise, control delay, and mass/friction parameter mismatches:
-```bash
-python evaluation/robustness_test.py --model checkpoints/sac_best.zip
+The notebook defaults to Google Drive persistence:
+
+```python
+USE_GOOGLE_DRIVE = True
+PROJECT_DIR = "/content/TriPendulum-8"
+DRIVE_OUTPUT_DIR = "/content/drive/MyDrive/TriPendulum-8-outputs"
+RUN_NAME = "sac_colab_pro_run"
 ```
 
-### Render Policy Video
-Render a rollout video for a specific goal:
-```bash
-python evaluation/render_video.py --model checkpoints/sac_best.zip --goal UUU --output videos/sac_UUU.mp4
+All important outputs are written under:
+
+```text
+/content/drive/MyDrive/TriPendulum-8-outputs/sac_colab_pro_run/
+├── checkpoints/
+├── runs/
+├── videos/
+│   └── diagnostics/
+├── evaluation/
+└── configs/
 ```
 
----
+This keeps model files, checkpoints, TensorBoard logs, diagnostic videos, evaluation CSV/PNG files, rendered videos, and config copies after the Colab runtime disconnects.
 
-## 10. Future Extensions
+## Diagnostic Videos
 
-1. **Hindsight Experience Replay (HER)**: Crucial for sparse reward goal-conditioned problems. Let the agent learn from failed swingups by setting the achieved end state as virtual goals.
-2. **MPC / Trajectory Optimization**: Combine SAC with iLQR or MPC to handle local tracking.
-3. **Domain Randomization**: Randomize link length, masses, and hinge damping in training to prepare for hardware transfer.
-4. **Sim-to-Real**: Account for sensor delays, backlash, and link flexibility.
-5. **Hierarchical Control**: Separate swing-up policies from stabilization policies.
+Training can periodically generate dynamic deterministic diagnostic videos. Because TriPendulum-8 is a goal-conditioned multi-posture control problem, it is usually not enough to keep watching only `UUU` or a few fixed targets.
+
+The recommended mode is `curriculum_worst`: at each diagnostic trigger, the callback evaluates the currently relevant goals, ranks them by failure, and records the worst goals for inspection.
+
+```yaml
+diagnostic_video:
+  enabled: true
+  eval_freq: 50000
+  max_steps: 1000
+  n_eval_episodes: 3
+  save_dir: "videos/diagnostics"
+  fps: 30
+  mode: "curriculum_worst"
+  worst_k: 2
+  fallback_goals:
+    - DDD
+    - UUU
+```
+
+Supported modes:
+
+- `fixed`: record configured `goals`.
+- `curriculum`: record the current curriculum stage goals.
+- `all`: record all 8 goals.
+- `worst`: evaluate all 8 goals and record the lowest-success goals.
+- `curriculum_worst`: if curriculum is enabled, evaluate current stage goals and record the worst goals; otherwise fall back to `worst`.
+
+At every `eval_freq` training timesteps, the callback first creates a separate evaluation environment, computes success rate, average reward, pose error, episode length, track collision rate, and max cart displacement for relevant goals, then records the selected goals. Files are written as:
+
+```text
+videos/diagnostics/sac_step_150000_stage_2_goal_DUD.mp4
+videos/diagnostics/sac_step_150000_stage_2_goal_DUD.json
+videos/diagnostics/diagnostic_step_150000.json
+```
+
+The per-video JSON sidecar records algorithm, timestep, curriculum status, stage id, stage goals, selected goal, selection reason, success, reward, episode length, final absolute-pose error, max cart displacement, track collision, and overspin status. The `diagnostic_step_*.json` report records evaluated goals, video goals, and all per-goal metrics.
+
+These videos are intended to inspect whether the policy:
+
+- fails most on a current curriculum-stage posture,
+- approaches or hits the finite track boundary,
+- exploits reward through excessive spinning,
+- gets close to the absolute target pose but cannot stabilize,
+- fails because cart displacement grows too large.
+
+## Extensions
+
+Planned extensions include HER, MPC/iLQR warm starts, domain randomization, system identification, observation/action delay, and sim-to-real transfer.
