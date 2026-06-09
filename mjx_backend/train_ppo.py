@@ -14,6 +14,7 @@ import jax
 import numpy as np
 import yaml
 from brax.io import model
+from mujoco_playground._src import wrapper
 from tensorboardX import SummaryWriter
 
 from mjx_backend.env import TriPendulumMJXEnv
@@ -47,7 +48,7 @@ def main() -> None:
     if jax.default_backend() != "gpu":
         raise RuntimeError("MJX training requires a JAX GPU backend; select a Colab GPU runtime.")
 
-    env = TriPendulumMJXEnv(config["env"], backend="mjx")
+    env = TriPendulumMJXEnv(config["env"])
     train_fn = make_train_fn(config)
     writer = SummaryWriter(str(log_dir))
     history_path = output_dir / "metrics.jsonl"
@@ -75,6 +76,7 @@ def main() -> None:
         environment=env,
         progress_fn=progress,
         policy_params_fn=save_checkpoint,
+        wrap_env_fn=wrapper.wrap_for_brax_training,
     )
     model.save_params(checkpoint_dir / "final.params", params)
     writer.close()

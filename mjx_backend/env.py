@@ -1,4 +1,4 @@
-"""Brax PipelineEnv implementation of goal-conditioned TriPendulum-8."""
+"""Native MuJoCo MJX environment for goal-conditioned TriPendulum-8."""
 
 from __future__ import annotations
 
@@ -7,8 +7,10 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
-from brax.envs.base import PipelineEnv, State
-from brax.io import mjcf
+from ml_collections import config_dict
+import mujoco
+from mujoco import mjx
+from mujoco_playground._src import mjx_env
 
 
 GOAL_BINARY = jnp.asarray(
@@ -38,15 +40,26 @@ def absolute_to_relative(theta: jax.Array) -> jax.Array:
     return wrap_angle(jnp.asarray([theta[0], theta[1] - theta[0], theta[2] - theta[1]]))
 
 
-class TriPendulumMJXEnv(PipelineEnv):
+class TriPendulumMJXEnv(mjx_env.MjxEnv):
     """Single-cart-actuator triple pendulum, vectorized externally by Brax."""
 
-    def __init__(self, config: dict[str, Any] | None = None, backend: str = "mjx", **kwargs):
+    def __init__(self, config: dict[str, Any] | None = None, **kwargs):
         self.config = config or {}
-        xml_path = Path(__file__).resolve().parents[1] / "envs" / "mujoco_model.xml"
-        sys = mjcf.load(xml_path)
+        self._xml_path = str(Path(__file__).resolve().parents[1] / "envs" / "mujoco_model.xml")
         self.frame_skip = int(self.config.get("frame_skip", 4))
-        super().__init__(sys=sys, backend=backend, n_frames=self.frame_skip, **kwargs)
+        env_config = config_dict.create(
+            ctrl_dt=0.005 * self.frame_skip,
+            sim_dt=0.005,
+            episode_length=int(self.config.get("max_episode_steps", 1000)),
+            action_repeat=1,
+            impl="jax",
+            naconmax=0,
+            njmax=8,
+        )
+        super().__init__(env_config, config_overrides=kwargs or None)
+        self._mj_model = mujoco.MjModel.from_xml_path(self._xml_path)
+        self._mj_model.opt.timestep = self.sim_dt
+        self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
 
         self.x_max = float(self.config.get("x_max", 4.8))
         self.f_max = float(self.config.get("f_max", 40.0))
@@ -70,7 +83,19 @@ class TriPendulumMJXEnv(PipelineEnv):
     def action_size(self) -> int:
         return 1
 
-    def reset(self, rng: jax.Array) -> State:
+    @property
+    def xml_path(self) -> str:
+        return self._xml_path
+
+    @property
+    def mj_model(self) -> mujoco.MjModel:
+        return self._mj_model
+
+    @property
+    def mjx_model(self) -> mjx.Model:
+        return self._mjx_model
+
+    def reset(self, rng: jax.Array) -> mjx_env.State:
         rng_goal, rng_fraction, rng_q, rng_qd, rng_cart = jax.random.split(rng, 5)
         goal_index = jax.random.randint(rng_goal, (), 0, 8)
         goal_binary = GOAL_BINARY[goal_index]
@@ -87,12 +112,20 @@ class TriPendulumMJXEnv(PipelineEnv):
         difficulty = 1.0 - pose_fraction
         angle_noise = 0.02 + difficulty * 0.10
         velocity_noise = 0.02 + difficulty * 0.08
-        q = self.sys.init_q
+        q = jnp.asarray(self._mj_model.qpos0)
         q = q.at[0].set(jax.random.uniform(rng_cart, (), minval=-0.05, maxval=0.05))
         q = q.at[1:4].set(target_q + jax.random.uniform(rng_q, (3,), minval=-angle_noise, maxval=angle_noise))
-        qd = jax.random.uniform(rng_qd, (self.sys.qd_size(),), minval=-velocity_noise, maxval=velocity_noise)
+        qd = jax.random.uniform(rng_qd, (self._mj_model.nv,), minval=-velocity_noise, maxval=velocity_noise)
         qd = qd.at[0].set(jnp.clip(qd[0], -0.05, 0.05))
-        pipeline_state = self.pipeline_init(q, qd)
+        data = mjx_env.make_data(
+            self.mj_model,
+            qpos=q,
+            qvel=qd,
+            impl=self.mjx_model.impl.value,
+            naconmax=self._config.naconmax,
+            njmax=self._config.njmax,
+        )
+        data = mjx.forward(self.mjx_model, data)
         theta_abs = relative_to_absolute(q[1:4])
         pose_error = jnp.sum(1.0 - jnp.cos(theta_abs - goal_abs))
         info = {
@@ -107,15 +140,15 @@ class TriPendulumMJXEnv(PipelineEnv):
             "steps_after_success": jnp.asarray(0, dtype=jnp.int32),
         }
         metrics = self._empty_metrics(pose_error)
-        obs = self._get_obs(pipeline_state, goal_binary)
-        return State(pipeline_state, obs, jnp.asarray(0.0), jnp.asarray(0.0), metrics, info)
+        obs = self._get_obs(data, goal_binary)
+        return mjx_env.State(data, obs, jnp.asarray(0.0), jnp.asarray(0.0), metrics, info)
 
-    def step(self, state: State, action: jax.Array) -> State:
+    def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
         normalized_action = jnp.clip(action, -1.0, 1.0)
         force = normalized_action * self.f_max
-        pipeline_state = self.pipeline_step(state.pipeline_state, force)
-        q = pipeline_state.q
-        qd = pipeline_state.qd
+        data = mjx_env.step(self.mjx_model, state.data, force, self.n_substeps)
+        q = data.qpos
+        qd = data.qvel
         x, x_dot = q[0], qd[0]
         theta_abs = relative_to_absolute(q[1:4])
         omega_abs = jnp.cumsum(qd[1:4])
@@ -190,12 +223,12 @@ class TriPendulumMJXEnv(PipelineEnv):
             "energy": r_act,
             "initial_pose_fraction": state.info["initial_pose_fraction"],
         }
-        obs = self._get_obs(pipeline_state, state.info["goal_binary"])
-        return state.replace(pipeline_state=pipeline_state, obs=obs, reward=reward, done=done.astype(jnp.float32), metrics=metrics, info=info)
+        obs = self._get_obs(data, state.info["goal_binary"])
+        return mjx_env.State(data, obs, reward, done.astype(jnp.float32), metrics, info)
 
-    def _get_obs(self, pipeline_state, goal_binary: jax.Array) -> jax.Array:
-        q = pipeline_state.q
-        qd = pipeline_state.qd
+    def _get_obs(self, data: mjx.Data, goal_binary: jax.Array) -> jax.Array:
+        q = data.qpos
+        qd = data.qvel
         relative = q[1:4]
         absolute = relative_to_absolute(relative)
         omega_abs = jnp.cumsum(qd[1:4])

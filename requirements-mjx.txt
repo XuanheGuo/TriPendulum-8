@@ -1,11 +1,12 @@
-# Brax 0.12 uses device_put_replicated, which was removed by newer JAX.
-# Keep this stack pinned until the training backend is migrated to the newer API.
-jax[cuda12]==0.5.3
-brax==0.12.5
-mujoco==3.3.7
-flax==0.10.6
-orbax-checkpoint==0.11.13
-optax==0.2.4
+jax[cuda12]
+brax>=0.14.2
+mujoco>=3.6.0
+mujoco-mjx>=3.6.0
+playground[cuda]>=0.2.0
+flax
+orbax-checkpoint>=0.11.22
+optax
+ml-collections
 PyYAML>=6.0
 tensorboardX>=2.6
 numpy>=1.26,<2.3

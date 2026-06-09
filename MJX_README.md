@@ -4,8 +4,8 @@ This directory is a separate GPU training backend. It does not replace or remove
 
 ## Design
 
-- Physics: MuJoCo MJX through Brax `PipelineEnv`
-- Learning: Brax PPO in JAX
+- Physics: current native `mujoco.mjx` through MuJoCo Playground `MjxEnv`
+- Learning: current Brax training PPO in JAX
 - Parallelism: 4096 GPU environments by default
 - Action: one normalized policy action mapped to cart force `[-40, 40] N`
 - Goals: all eight absolute link postures trained concurrently
@@ -69,7 +69,7 @@ MyDrive/TriPendulum-8-MJX/<RUN_NAME>/
 
 The first JAX compilation can take several minutes. Throughput measurements are meaningful only after compilation finishes.
 
-The dependency file intentionally pins JAX `0.5.3` with Brax `0.12.5`. Newer JAX releases removed `device_put_replicated`, which this PPO implementation still uses. After changing these packages in Colab, restart the runtime before training so an already-imported JAX module is not retained in memory. Messages saying Warp could not be imported are harmless because this branch uses MJX, not MuJoCo Warp.
+This backend follows the current MuJoCo Playground architecture: Playground owns the environment API, native `mujoco.mjx` owns physics, and Brax supplies only the PPO trainer. It does not use the deprecated Brax physics `PipelineEnv` and therefore does not require downgrading JAX. After changing JAX packages in Colab, restart the runtime so an already-imported module is not retained in memory.
 
 ## Important Compatibility Notes
 

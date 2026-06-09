@@ -24,7 +24,7 @@ def main() -> None:
     args = parser.parse_args()
     with open(args.config, "r", encoding="utf-8") as file:
         config = yaml.safe_load(file)
-    mjx_env = TriPendulumMJXEnv(config["env"], backend="mjx")
+    mjx_env = TriPendulumMJXEnv(config["env"])
     policy = load_policy(config, args.checkpoint, mjx_env)
     env_cfg = dict(config["env"])
     env_cfg.pop("initial_pose_fractions", None)

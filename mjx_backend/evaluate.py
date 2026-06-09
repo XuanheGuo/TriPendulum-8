@@ -10,6 +10,8 @@ import jax.numpy as jnp
 import numpy as np
 import yaml
 from brax.io import model
+from mujoco import mjx
+from mujoco_playground._src import wrapper
 
 from mjx_backend.env import GOAL_BINARY, TriPendulumMJXEnv
 from mjx_backend.training import make_train_fn
@@ -20,7 +22,10 @@ GOAL_NAMES = ("DDD", "DDU", "DUD", "UDD", "DUU", "UDU", "UUD", "UUU")
 
 def load_policy(config: dict, checkpoint: str, env):
     train_fn = make_train_fn(config, num_timesteps=0)
-    make_policy, _, _ = train_fn(environment=env)
+    make_policy, _, _ = train_fn(
+        environment=env,
+        wrap_env_fn=wrapper.wrap_for_brax_training,
+    )
     params = model.load_params(checkpoint)
     return jax.jit(make_policy(params, deterministic=True))
 
@@ -30,10 +35,11 @@ def reset_goal(env, rng, goal_index: int):
     goal_binary = GOAL_BINARY[goal_index]
     goal_abs = goal_binary * jnp.pi
     rng_q, rng_qd = jax.random.split(rng)
-    q = env.sys.init_q.at[1:4].set(jax.random.uniform(rng_q, (3,), minval=-0.05, maxval=0.05))
-    qd = jnp.zeros_like(state.pipeline_state.qd)
+    q = jnp.asarray(env.mj_model.qpos0).at[1:4].set(jax.random.uniform(rng_q, (3,), minval=-0.05, maxval=0.05))
+    qd = jnp.zeros_like(state.data.qvel)
     qd = qd.at[1:4].set(jax.random.uniform(rng_qd, (3,), minval=-0.05, maxval=0.05))
-    pipeline_state = env.pipeline_init(q, qd)
+    data = state.data.replace(qpos=q, qvel=qd)
+    data = mjx.forward(env.mjx_model, data)
     theta_abs = jnp.cumsum(q[1:4])
     pose_error = jnp.sum(1.0 - jnp.cos(theta_abs - goal_abs))
     info = {
@@ -44,8 +50,8 @@ def reset_goal(env, rng, goal_index: int):
         "initial_pose_fraction": jnp.asarray(0.0),
         "prev_pose_error": pose_error,
     }
-    obs = env._get_obs(pipeline_state, goal_binary)
-    return state.replace(pipeline_state=pipeline_state, obs=obs, info=info)
+    obs = env._get_obs(data, goal_binary)
+    return state.replace(data=data, obs=obs, info=info)
 
 
 def main() -> None:
@@ -57,7 +63,7 @@ def main() -> None:
     args = parser.parse_args()
     with open(args.config, "r", encoding="utf-8") as file:
         config = yaml.safe_load(file)
-    env = TriPendulumMJXEnv(config["env"], backend="mjx")
+    env = TriPendulumMJXEnv(config["env"])
     policy = load_policy(config, args.checkpoint, env)
     step_fn = jax.jit(env.step)
     results = {}
