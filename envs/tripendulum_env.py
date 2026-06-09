@@ -5,6 +5,11 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+# MuJoCo must select its offscreen backend before the module is imported.
+if os.name != "nt" and not os.environ.get("DISPLAY"):
+    os.environ.setdefault("MUJOCO_GL", "egl")
+    os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
+
 import gymnasium as gym
 import mujoco
 import numpy as np

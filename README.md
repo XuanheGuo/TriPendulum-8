@@ -109,6 +109,8 @@ This keeps model files, checkpoints, TensorBoard logs, diagnostic videos, evalua
 
 TensorBoard should read local logs from `/content/TriPendulum-8-runtime/.../runs`, not directly from Google Drive. The notebook starts a small background sync that copies local event files to Drive every few minutes. This avoids the common Colab failure where TensorBoard shows `Data could not be loaded` while reading Drive-mounted event files.
 
+The Colab notebook selects MuJoCo's EGL backend before importing MuJoCo, so diagnostic videos render without X11. Diagnostic rendering is also failure-isolated: if EGL is unavailable, training continues and the sidecar JSON records `render_error` instead of allowing a video callback to terminate the run.
+
 ## Diagnostic Videos
 
 Training can periodically generate dynamic deterministic diagnostic videos. Because TriPendulum-8 is a goal-conditioned multi-posture control problem, it is usually not enough to keep watching only `UUU` or a few fixed targets.

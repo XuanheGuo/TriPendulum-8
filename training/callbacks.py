@@ -397,12 +397,19 @@ class DiagnosticVideoCallback(BaseCallback):
         max_abs_omega = 0.0
         swing_energy_rewards = []
         episode_length = 0
+        render_error = None
+        rendering_enabled = True
 
         try:
             for step in range(self.max_steps):
-                frame = env.render()
-                if frame is not None:
-                    frames.append(frame)
+                if rendering_enabled:
+                    try:
+                        frame = env.render()
+                        if frame is not None:
+                            frames.append(frame)
+                    except Exception as exc:
+                        render_error = f"{type(exc).__name__}: {exc}"
+                        rendering_enabled = False
 
                 action, _ = self.model.predict(obs, deterministic=True)
                 obs, reward, terminated, truncated, info = env.step(action)
@@ -426,14 +433,22 @@ class DiagnosticVideoCallback(BaseCallback):
                 if terminated or truncated:
                     break
         finally:
-            env.close()
+            try:
+                env.close()
+            except Exception as exc:
+                if render_error is None:
+                    render_error = f"close {type(exc).__name__}: {exc}"
 
         base_name = f"{self.algorithm}_step_{self.num_timesteps}_stage_{stage_id}_goal_{goal}"
         video_path = os.path.join(self.save_dir, f"{base_name}.mp4")
         json_path = os.path.join(self.save_dir, f"{base_name}.json")
 
+        video_error = None
         if frames:
-            save_mp4(frames, video_path, fps=self.fps)
+            try:
+                save_mp4(frames, video_path, fps=self.fps)
+            except Exception as exc:
+                video_error = f"{type(exc).__name__}: {exc}"
 
         action_reversals = sum(
             1
@@ -453,6 +468,9 @@ class DiagnosticVideoCallback(BaseCallback):
             "stage_goals": list(stage_goals),
             "goal": goal,
             "selection_reason": selection_reason,
+            "video_saved": bool(frames and video_error is None),
+            "render_error": render_error,
+            "video_error": video_error,
             "success": bool(success),
             "episode_reward": episode_reward,
             "episode_length": int(episode_length),
