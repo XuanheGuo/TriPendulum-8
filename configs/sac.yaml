@@ -7,7 +7,7 @@ algorithm:
   batch_size: 128
   gamma: 0.99
   tau: 0.005
-  train_freq: 8
+  train_freq: 2
   gradient_steps: 2
   learning_starts: 5000
   resume_learning_starts: 5000

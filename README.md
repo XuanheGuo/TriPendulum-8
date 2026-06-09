@@ -225,7 +225,32 @@ python training/train_sac.py \
   --resume-from checkpoints/sac_200000_steps.zip
 ```
 
-The local SAC defaults use `train_freq: 8`, `gradient_steps: 2`, and `batch_size: 128` to reduce update overhead. TensorBoard exposes `rollout/max_abs_x_mean` and `rollout/terminal_abs_x` for detecting slow wall drift.
+The local SAC defaults use four environments with `train_freq: 2`, `gradient_steps: 2`, and `batch_size: 128`. Each training cycle therefore collects eight transitions before two gradient updates. TensorBoard exposes `rollout/max_abs_x_mean` and `rollout/terminal_abs_x` for detecting slow wall drift.
+
+### Parallel Local Training
+
+SAC uses four parallel MuJoCo environment processes by default. This is the main way to use more CPU cores because each individual MuJoCo environment is largely single-threaded.
+
+```bash
+python training/train_sac.py \
+  --config configs/sac.yaml \
+  --n-envs 4 \
+  --torch-num-threads 1 \
+  --total-timesteps 2000000 \
+  --save-path checkpoints/sac_fresh_final.zip
+```
+
+Recommended starting values:
+
+- 4 physical CPU cores: `--n-envs 3`
+- 6-8 physical CPU cores: `--n-envs 4`
+- 12+ physical CPU cores: test `--n-envs 6` or `--n-envs 8`
+
+More environments are not always faster because subprocess communication and SAC inference add overhead. Compare the TensorBoard `time/fps` value for 20,000-50,000 steps before choosing. Keep `--torch-num-threads 1` to prevent PyTorch and MuJoCo worker processes from fighting over the same CPU cores.
+
+For this small MLP, test both `--device cpu` and `--device cuda` if an NVIDIA GPU is available. CUDA is not automatically faster when batches are small; use whichever produces the higher `time/fps` after the learning warm-up period.
+
+The MuJoCo model uses `implicitfast` rather than RK4. The simulation timestep and policy control period are unchanged, but this avoids RK4's multiple dynamics evaluations per physics step and is substantially faster for this articulated system.
 
 ## Extensions
 

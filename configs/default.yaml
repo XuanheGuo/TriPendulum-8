@@ -38,6 +38,12 @@ reward:
 paths:
   checkpoint_dir: checkpoints
   tensorboard_dir: runs
+runtime:
+  n_envs: 4
+  subproc_start_method: auto
+  torch_num_threads: 1
+  worker_num_threads: 1
+  device: auto
 curriculum:
   enabled: true
   mode: sequential
@@ -64,9 +70,9 @@ eval:
   log_path: runs/eval
 diagnostic_video:
   enabled: true
-  eval_freq: 50000
-  max_steps: 1000
-  n_eval_episodes: 3
+  eval_freq: 100000
+  max_steps: 800
+  n_eval_episodes: 2
   save_dir: "videos/diagnostics"
   fps: 30
   mode: "curriculum_worst"
