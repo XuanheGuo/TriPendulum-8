@@ -29,6 +29,7 @@ reward:
   w_outward: 2.0
   w_pose_progress: 8.0
   w_swing_energy: 0.03
+  w_upright_height: 2.0
   w_spin: 0.002
   w_delta_a: 0.001
   lambda_x: 1.0
@@ -53,6 +54,7 @@ curriculum:
   goal_order: ["DDD", "DDU", "DUD", "UDD", "DUU", "UDU", "UUD", "UUU"]
   start_index: 0
   retain_previous_goals: true
+  initial_pose_fractions: [1.0, 0.5, 0.25, 0.0]
   resume_state: true
   eval_freq: 25000
   n_eval_episodes: 3

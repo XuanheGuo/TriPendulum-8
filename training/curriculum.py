@@ -31,6 +31,8 @@ class SequentialCurriculumState:
     goals: tuple[str, ...] = ALL_GOALS
     current_index: int = 0
     retain_previous_goals: bool = True
+    difficulty_fractions: tuple[float, ...] = (1.0, 0.5, 0.25, 0.0)
+    difficulty_index: int = 0
     consecutive_passes: int = 0
     goal_start_timestep: int = 0
     completed: bool = False
@@ -51,6 +53,29 @@ class SequentialCurriculumState:
             return list(self.goals[: self.current_index + 1])
         return [self.current_goal]
 
+    @property
+    def current_initial_pose_fraction(self) -> float:
+        if self.current_goal == "DDD":
+            return 0.0
+        return self.difficulty_fractions[self.difficulty_index]
+
+    @property
+    def difficulty_stage(self) -> int:
+        if self.current_goal == "DDD":
+            return 1
+        return self.difficulty_index + 1
+
+    @property
+    def difficulty_label(self) -> str:
+        fraction = self.current_initial_pose_fraction
+        if fraction >= 0.99:
+            return "near_target"
+        if fraction >= 0.49:
+            return "halfway_90deg"
+        if fraction >= 0.24:
+            return "quarter_45deg"
+        return "full_down_swingup"
+
     def register_evaluation(self, timestep: int, metrics: dict, passed: bool) -> None:
         self.consecutive_passes = self.consecutive_passes + 1 if passed else 0
         self.history.append(
@@ -58,22 +83,32 @@ class SequentialCurriculumState:
                 "timestep": int(timestep),
                 "stage_id": self.stage_id,
                 "goal": self.current_goal,
+                "difficulty_stage": self.difficulty_stage,
+                "difficulty_label": self.difficulty_label,
+                "initial_pose_fraction": self.current_initial_pose_fraction,
                 "passed": bool(passed),
                 "metrics": metrics,
             }
         )
         self.save()
 
-    def advance(self, timestep: int) -> bool:
+    def advance(self, timestep: int) -> str:
+        if self.current_goal != "DDD" and self.difficulty_index < len(self.difficulty_fractions) - 1:
+            self.difficulty_index += 1
+            self.consecutive_passes = 0
+            self.goal_start_timestep = int(timestep)
+            self.save()
+            return "difficulty"
         if self.current_index >= len(self.goals) - 1:
             self.completed = True
             self.save()
-            return False
+            return "complete"
         self.current_index += 1
+        self.difficulty_index = 0
         self.consecutive_passes = 0
         self.goal_start_timestep = int(timestep)
         self.save()
-        return True
+        return "goal"
 
     def to_dict(self) -> dict:
         return {
@@ -83,6 +118,11 @@ class SequentialCurriculumState:
             "current_goal": self.current_goal,
             "training_goals": self.training_goals,
             "retain_previous_goals": self.retain_previous_goals,
+            "difficulty_fractions": list(self.difficulty_fractions),
+            "difficulty_index": self.difficulty_index,
+            "difficulty_stage": self.difficulty_stage,
+            "difficulty_label": self.difficulty_label,
+            "current_initial_pose_fraction": self.current_initial_pose_fraction,
             "consecutive_passes": self.consecutive_passes,
             "goal_start_timestep": self.goal_start_timestep,
             "completed": self.completed,
@@ -115,6 +155,7 @@ def create_curriculum_state(curriculum_config: dict | None, checkpoint_dir: str 
         goals=goals,
         current_index=max(0, min(int(cfg.get("start_index", 0)), len(goals) - 1)),
         retain_previous_goals=bool(cfg.get("retain_previous_goals", True)),
+        difficulty_fractions=tuple(float(value) for value in cfg.get("initial_pose_fractions", [1.0, 0.5, 0.25, 0.0])),
         state_path=state_path,
     )
     if state_path and os.path.exists(state_path) and cfg.get("resume_state", True):
@@ -123,6 +164,10 @@ def create_curriculum_state(curriculum_config: dict | None, checkpoint_dir: str 
         if tuple(saved.get("goals", goals)) == goals:
             state.current_index = max(0, min(int(saved.get("current_index", 0)), len(goals) - 1))
             state.consecutive_passes = int(saved.get("consecutive_passes", 0))
+            state.difficulty_index = max(
+                0,
+                min(int(saved.get("difficulty_index", 0)), len(state.difficulty_fractions) - 1),
+            )
             state.goal_start_timestep = int(saved.get("goal_start_timestep", 0))
             state.completed = bool(saved.get("completed", False))
             state.history = list(saved.get("history", []))

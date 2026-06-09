@@ -217,6 +217,8 @@ Angular-velocity, action-energy, and action-rate regularizers are deliberately m
 
 For links whose absolute goal is `U`, the reward also includes a capped swing-energy term while that link is far from its goal. This explicitly rewards building absolute angular velocity at the bottom, where the cosine pose objective has almost no local gradient. The term fades to zero near the target, allowing velocity penalties to brake and stabilize the link. Angular velocities used by reward, success checks, and observation are absolute link velocities obtained by cumulatively summing MuJoCo relative hinge velocities.
 
+Each non-DDD goal also uses an automatic initial-pose curriculum. For DDU, the third link progresses through target-near, 90-degree, 45-degree-from-down, and full-down starts. The curriculum must pass deterministic evaluation at each difficulty before moving farther from the target. Diagnostic JSON files report `difficulty_label` and `initial_pose_fraction`; only `full_down_swingup` represents the complete swing-up task.
+
 This changes reward semantics but preserves the observation/action contract. You may resume an existing model checkpoint, but do not load its old replay buffer because stored transitions contain rewards from the previous formulation:
 
 ```bash

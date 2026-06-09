@@ -128,12 +128,14 @@ class AutoCurriculumCallback(BaseCallback):
 
         self.last_eval_timestep = self.num_timesteps
         goal = self.state.current_goal
+        evaluation_env_config = deepcopy(self.env_config)
+        evaluation_env_config["curriculum_initial_pose_fraction"] = self.state.current_initial_pose_fraction
         metrics = evaluate_goal_metrics(
             self.model,
             goals=[goal],
             episodes_per_goal=self.n_eval_episodes,
             deterministic=True,
-            env_config=self.env_config,
+            env_config=evaluation_env_config,
             reward_config=self.reward_config,
             max_steps=self.max_steps,
         )[goal]
@@ -156,6 +158,8 @@ class AutoCurriculumCallback(BaseCallback):
 
         self.logger.record("curriculum/stage_id", self.state.stage_id)
         self.logger.record("curriculum/current_goal_index", self.state.current_index)
+        self.logger.record("curriculum/difficulty_stage", self.state.difficulty_stage)
+        self.logger.record("curriculum/initial_pose_fraction", self.state.current_initial_pose_fraction)
         self.logger.record("curriculum/eval_success_rate", metrics["success_rate"])
         self.logger.record("curriculum/eval_pose_error", metrics["avg_pose_error"])
         self.logger.record("curriculum/eval_final_pose_error", metrics.get("avg_final_pose_error", metrics["avg_pose_error"]))
@@ -179,10 +183,16 @@ class AutoCurriculumCallback(BaseCallback):
                     f"{self.algorithm}_curriculum_goal_{completed_goal}_step_{self.num_timesteps}.zip",
                 )
             )
-            advanced = self.state.advance(self.num_timesteps)
+            advance_type = self.state.advance(self.num_timesteps)
             self._update_training_goals()
             if self.verbose:
-                if advanced:
+                if advance_type == "difficulty":
+                    print(
+                        f"Curriculum difficulty advanced for {self.state.current_goal}: "
+                        f"{self.state.difficulty_label}, initial_pose_fraction="
+                        f"{self.state.current_initial_pose_fraction:.2f}"
+                    )
+                elif advance_type == "goal":
                     print(
                         f"Curriculum advanced: {completed_goal} -> {self.state.current_goal}; "
                         f"training goals={self.state.training_goals}"
@@ -196,6 +206,7 @@ class AutoCurriculumCallback(BaseCallback):
             "set_curriculum_goals",
             self.state.training_goals,
             self.state.current_goal,
+            self.state.current_initial_pose_fraction,
         )
 
 
@@ -252,12 +263,17 @@ class DiagnosticVideoCallback(BaseCallback):
         stage_goals = get_current_goals(self.curriculum_config, self.curriculum_state)
         curriculum_enabled = bool(self.curriculum_config.get("enabled", False))
         eval_goals = self._select_eval_goals(curriculum_enabled, stage_goals)
+        evaluation_env_config = deepcopy(self.env_config)
+        if self.curriculum_state is not None:
+            evaluation_env_config["curriculum_initial_pose_fraction"] = (
+                self.curriculum_state.current_initial_pose_fraction
+            )
         goal_metrics = evaluate_goal_metrics(
             self.model,
             goals=eval_goals,
             episodes_per_goal=self.n_eval_episodes,
             deterministic=True,
-            env_config=self.env_config,
+            env_config=evaluation_env_config,
             reward_config=self.reward_config,
             max_steps=self.max_steps,
         )
@@ -333,6 +349,10 @@ class DiagnosticVideoCallback(BaseCallback):
             "curriculum_enabled": bool(curriculum_enabled),
             "stage_id": int(stage_id),
             "current_goal": self.curriculum_state.current_goal if self.curriculum_state is not None else None,
+            "difficulty_label": self.curriculum_state.difficulty_label if self.curriculum_state is not None else None,
+            "initial_pose_fraction": (
+                self.curriculum_state.current_initial_pose_fraction if self.curriculum_state is not None else 0.0
+            ),
             "stage_goals": list(stage_goals),
             "evaluated_goals": list(eval_goals),
             "video_goals": list(video_goals),
@@ -354,6 +374,8 @@ class DiagnosticVideoCallback(BaseCallback):
         env_cfg = deepcopy(self.env_config)
         env_cfg["render_mode"] = "rgb_array"
         env_cfg["reward"] = deepcopy(self.reward_config)
+        if self.curriculum_state is not None and goal == self.curriculum_state.current_goal:
+            env_cfg["curriculum_initial_pose_fraction"] = self.curriculum_state.current_initial_pose_fraction
         env = TriPendulumGoalEnv(env_cfg, render_mode="rgb_array")
 
         frames = []
@@ -413,6 +435,10 @@ class DiagnosticVideoCallback(BaseCallback):
             "curriculum_enabled": bool(curriculum_enabled),
             "stage_id": int(stage_id),
             "current_goal": self.curriculum_state.current_goal if self.curriculum_state is not None else goal,
+            "difficulty_label": self.curriculum_state.difficulty_label if self.curriculum_state is not None else None,
+            "initial_pose_fraction": (
+                self.curriculum_state.current_initial_pose_fraction if self.curriculum_state is not None else 0.0
+            ),
             "stage_goals": list(stage_goals),
             "goal": goal,
             "selection_reason": selection_reason,

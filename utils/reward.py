@@ -19,6 +19,7 @@ class RewardConfig:
     w_outward: float = 2.0
     w_pose_progress: float = 8.0
     w_swing_energy: float = 0.03
+    w_upright_height: float = 2.0
     w_spin: float = 0.002
     w_delta_a: float = 0.001
     lambda_x: float = 1.0
@@ -76,6 +77,7 @@ def compute_reward(
     r_outward = float(outward_speed**2)
     r_pose_progress = float(np.clip(float(prev_pose_error) - r_pose, -1.0, 1.0))
     up_goal_mask = 0.5 * (1.0 - np.cos(theta_goal_abs))
+    r_upright_height = float(np.sum(up_goal_mask * 0.5 * (1.0 - np.cos(theta_abs))))
     far_from_goal = np.clip(pose_terms / 2.0, 0.0, 1.0)
     capped_speed_sq = np.minimum(np.square(omega), cfg.swing_velocity_cap**2)
     r_swing_energy = float(np.sum(up_goal_mask * far_from_goal * capped_speed_sq))
@@ -101,6 +103,7 @@ def compute_reward(
         - cfg.w_delta_a * r_delta_a
         + cfg.w_pose_progress * r_pose_progress
         + cfg.w_swing_energy * r_swing_energy
+        + cfg.w_upright_height * r_upright_height
         + success_bonus
     )
 
@@ -117,6 +120,7 @@ def compute_reward(
         "r_outward": r_outward,
         "r_pose_progress": r_pose_progress,
         "r_swing_energy": r_swing_energy,
+        "r_upright_height": r_upright_height,
         "r_spin": r_spin,
         "r_delta_a": r_delta_a,
         "success": success,

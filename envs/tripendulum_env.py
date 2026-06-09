@@ -38,6 +38,7 @@ class TriPendulumConfig:
     primary_goal_near_target_probability: float = 0.15
     near_target_angle_noise: float = 0.12
     near_target_velocity_noise: float = 0.1
+    curriculum_initial_pose_fraction: float | None = None
     allowed_goals: tuple[str, ...] = field(default_factory=lambda: GOAL_NAMES)
     reward: RewardConfig = field(default_factory=RewardConfig)
 
@@ -70,6 +71,7 @@ class TriPendulumGoalEnv(gym.Env):
         self.goal_binary = np.zeros(3, dtype=np.float32)
         self.goal_abs_angles = np.zeros(3, dtype=np.float64)
         self.primary_goal = None
+        self.primary_goal_initial_pose_fraction = None
         self.stable_steps = 0
         self.step_count = 0
         self.prev_action = np.zeros(1, dtype=np.float64)
@@ -135,13 +137,12 @@ class TriPendulumGoalEnv(gym.Env):
                 self.config.initial_velocity_noise,
                 size=3,
             )
-        if (
-            self.primary_goal is not None
-            and self.goal_name == self.primary_goal
-            and self.goal_name != "DDD"
-            and self.np_random.random() < self.config.primary_goal_near_target_probability
-        ):
-            target_q = absolute_to_relative(self.goal_abs_angles)
+        initial_pose_fraction = self.config.curriculum_initial_pose_fraction
+        if self.primary_goal is not None and self.goal_name == self.primary_goal:
+            initial_pose_fraction = self.primary_goal_initial_pose_fraction
+        if initial_pose_fraction is not None and self.goal_name != "DDD" and initial_pose_fraction > 0.0:
+            initial_abs_angles = self.goal_abs_angles * float(initial_pose_fraction)
+            target_q = absolute_to_relative(initial_abs_angles)
             self.data.qpos[1:4] = target_q + self.np_random.uniform(
                 -self.config.near_target_angle_noise,
                 self.config.near_target_angle_noise,
@@ -170,11 +171,12 @@ class TriPendulumGoalEnv(gym.Env):
             raise ValueError(f"Invalid allowed goals: {goals}")
         self.config.allowed_goals = goals
 
-    def set_curriculum_goals(self, goals, primary_goal=None):
+    def set_curriculum_goals(self, goals, primary_goal=None, initial_pose_fraction=None):
         self.set_allowed_goals(goals)
         if primary_goal is not None and primary_goal not in self.config.allowed_goals:
             raise ValueError(f"Primary goal {primary_goal} is not in allowed goals")
         self.primary_goal = primary_goal
+        self.primary_goal_initial_pose_fraction = initial_pose_fraction
 
     def step(self, action):
         action = np.asarray(action, dtype=np.float64).reshape(1)
