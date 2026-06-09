@@ -11,7 +11,7 @@ import numpy as np
 from gymnasium import spaces
 
 from envs.goals import GOAL_NAMES, get_goal, sample_goal
-from utils.angle_utils import relative_to_absolute
+from utils.angle_utils import absolute_to_relative, relative_to_absolute
 from utils.reward import RewardConfig, compute_reward
 
 
@@ -29,9 +29,15 @@ class TriPendulumConfig:
     omega_threshold: float = 1.0
     stable_steps_required: int = 25
     collision_penalty: float = 250.0
-    random_initial_state: bool = False
+    random_initial_state: bool = True
+    initial_cart_position_noise: float = 0.05
+    initial_cart_velocity_noise: float = 0.05
     initial_angle_noise: float = 0.05
     initial_velocity_noise: float = 0.05
+    primary_goal_probability: float = 0.8
+    primary_goal_near_target_probability: float = 0.15
+    near_target_angle_noise: float = 0.12
+    near_target_velocity_noise: float = 0.1
     allowed_goals: tuple[str, ...] = field(default_factory=lambda: GOAL_NAMES)
     reward: RewardConfig = field(default_factory=RewardConfig)
 
@@ -63,9 +69,12 @@ class TriPendulumGoalEnv(gym.Env):
         self.goal_name = "DDD"
         self.goal_binary = np.zeros(3, dtype=np.float32)
         self.goal_abs_angles = np.zeros(3, dtype=np.float64)
+        self.primary_goal = None
         self.stable_steps = 0
         self.step_count = 0
         self.prev_action = np.zeros(1, dtype=np.float64)
+        self.prev_pose_error = 0.0
+        self.max_abs_x = 0.0
         self.viewer = None
         self.renderer = None
 
@@ -90,7 +99,14 @@ class TriPendulumGoalEnv(gym.Env):
         options = options or {}
         goal = goal or options.get("goal")
         if goal is None:
-            selected = sample_goal(self.np_random, self.config.allowed_goals)
+            if self.primary_goal is not None and self.np_random.random() < self.config.primary_goal_probability:
+                selected = get_goal(self.primary_goal)
+            else:
+                fallback_goals = tuple(goal for goal in self.config.allowed_goals if goal != self.primary_goal)
+                selected = sample_goal(
+                    self.np_random,
+                    fallback_goals or self.config.allowed_goals,
+                )
         else:
             selected = get_goal(goal)
         self.goal_name = selected.name
@@ -101,21 +117,50 @@ class TriPendulumGoalEnv(gym.Env):
         self.data.qpos[:] = 0.0
         self.data.qvel[:] = 0.0
         if self.config.random_initial_state:
+            self.data.qpos[0] = self.np_random.uniform(
+                -self.config.initial_cart_position_noise,
+                self.config.initial_cart_position_noise,
+            )
             self.data.qpos[1:4] = self.np_random.uniform(
                 -self.config.initial_angle_noise,
                 self.config.initial_angle_noise,
                 size=3,
             )
-            self.data.qvel[:] = self.np_random.uniform(
+            self.data.qvel[0] = self.np_random.uniform(
+                -self.config.initial_cart_velocity_noise,
+                self.config.initial_cart_velocity_noise,
+            )
+            self.data.qvel[1:4] = self.np_random.uniform(
                 -self.config.initial_velocity_noise,
                 self.config.initial_velocity_noise,
-                size=4,
+                size=3,
+            )
+        if (
+            self.primary_goal is not None
+            and self.goal_name == self.primary_goal
+            and self.goal_name != "DDD"
+            and self.np_random.random() < self.config.primary_goal_near_target_probability
+        ):
+            target_q = absolute_to_relative(self.goal_abs_angles)
+            self.data.qpos[1:4] = target_q + self.np_random.uniform(
+                -self.config.near_target_angle_noise,
+                self.config.near_target_angle_noise,
+                size=3,
+            )
+            self.data.qvel[1:4] = self.np_random.uniform(
+                -self.config.near_target_velocity_noise,
+                self.config.near_target_velocity_noise,
+                size=3,
             )
         mujoco.mj_forward(self.model, self.data)
+        q_relative = np.array(self.data.qpos[1:4], dtype=np.float64)
+        theta_abs = relative_to_absolute(q_relative)
 
         self.stable_steps = 0
         self.step_count = 0
         self.prev_action = np.zeros(1, dtype=np.float64)
+        self.prev_pose_error = float(np.sum(1.0 - np.cos(theta_abs - self.goal_abs_angles)))
+        self.max_abs_x = abs(float(self.data.qpos[0]))
         return self._get_obs(), self._base_info(track_collision=False, success=False)
 
     def set_allowed_goals(self, goals):
@@ -124,6 +169,12 @@ class TriPendulumGoalEnv(gym.Env):
         if not goals or unknown:
             raise ValueError(f"Invalid allowed goals: {goals}")
         self.config.allowed_goals = goals
+
+    def set_curriculum_goals(self, goals, primary_goal=None):
+        self.set_allowed_goals(goals)
+        if primary_goal is not None and primary_goal not in self.config.allowed_goals:
+            raise ValueError(f"Primary goal {primary_goal} is not in allowed goals")
+        self.primary_goal = primary_goal
 
     def step(self, action):
         action = np.asarray(action, dtype=np.float64).reshape(1)
@@ -135,6 +186,8 @@ class TriPendulumGoalEnv(gym.Env):
 
         self.step_count += 1
         x = float(self.data.qpos[0])
+        x_dot = float(self.data.qvel[0])
+        self.max_abs_x = max(self.max_abs_x, abs(x))
         q_relative = np.array(self.data.qpos[1:4], dtype=np.float64)
         omega = np.array(self.data.qvel[1:4], dtype=np.float64)
         theta_abs = relative_to_absolute(q_relative)
@@ -149,9 +202,11 @@ class TriPendulumGoalEnv(gym.Env):
             action=clipped_action,
             prev_action=self.prev_action,
             x=x,
+            x_dot=x_dot,
             x_max=self.config.x_max,
             stable_steps=self.stable_steps,
             track_collision=track_collision,
+            prev_pose_error=self.prev_pose_error,
             cfg=self.config.reward,
         )
         if track_collision:
@@ -165,12 +220,14 @@ class TriPendulumGoalEnv(gym.Env):
             {
                 "x": x,
                 "x_max": self.config.x_max,
+                "max_abs_x": self.max_abs_x,
                 "action": clipped_action.copy(),
                 "omega_over_limit": omega_over_limit,
                 "time_limit": truncated,
             }
         )
         self.prev_action = clipped_action.copy()
+        self.prev_pose_error = float(info["r_pose"])
         return self._get_obs(), float(reward), terminated, truncated, info
 
     def _get_obs(self):
@@ -219,6 +276,7 @@ class TriPendulumGoalEnv(gym.Env):
             "track_collision": bool(track_collision),
             "x": float(self.data.qpos[0]),
             "x_max": self.config.x_max,
+            "max_abs_x": self.max_abs_x,
         }
 
     def render(self):

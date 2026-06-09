@@ -53,6 +53,8 @@ class EpisodeInfoCallback(BaseCallback):
 
             self.logger.record_mean("rollout/episode_success", success)
             self.logger.record_mean("rollout/episode_track_collision", collision)
+            self.logger.record_mean("rollout/terminal_abs_x", abs(float(info.get("x", 0.0))))
+            self.logger.record_mean("rollout/max_abs_x_mean", float(info.get("max_abs_x", 0.0)))
             self.logger.record(
                 f"rollout/success_rate_{self.window_size}",
                 sum(self.success_history) / len(self.success_history),
@@ -83,6 +85,8 @@ class AutoCurriculumCallback(BaseCallback):
         max_steps: int = 1000,
         success_threshold: float = 0.8,
         max_pose_error: float = 0.25,
+        require_pose_error: bool = False,
+        pose_error_key: str = "avg_final_pose_error",
         max_collision_rate: float = 0.1,
         consecutive_passes_required: int = 2,
         min_steps_per_goal: int = 25000,
@@ -99,6 +103,8 @@ class AutoCurriculumCallback(BaseCallback):
         self.max_steps = int(max_steps)
         self.success_threshold = float(success_threshold)
         self.max_pose_error = float(max_pose_error)
+        self.require_pose_error = bool(require_pose_error)
+        self.pose_error_key = pose_error_key
         self.max_collision_rate = float(max_collision_rate)
         self.consecutive_passes_required = int(consecutive_passes_required)
         self.min_steps_per_goal = int(min_steps_per_goal)
@@ -131,24 +137,37 @@ class AutoCurriculumCallback(BaseCallback):
             reward_config=self.reward_config,
             max_steps=self.max_steps,
         )[goal]
-        passed = bool(
-            metrics["success_rate"] >= self.success_threshold
-            and metrics["avg_pose_error"] <= self.max_pose_error
-            and metrics["track_collision_rate"] <= self.max_collision_rate
-        )
+        pass_checks = {
+            "success_rate": metrics["success_rate"] >= self.success_threshold,
+            "track_collision_rate": metrics["track_collision_rate"] <= self.max_collision_rate,
+        }
+        if self.require_pose_error:
+            pass_checks[self.pose_error_key] = metrics.get(self.pose_error_key, float("inf")) <= self.max_pose_error
+        passed = bool(all(pass_checks.values()))
+        metrics["pass_checks"] = pass_checks
+        metrics["pass_thresholds"] = {
+            "success_threshold": self.success_threshold,
+            "max_collision_rate": self.max_collision_rate,
+            "require_pose_error": self.require_pose_error,
+            "pose_error_key": self.pose_error_key,
+            "max_pose_error": self.max_pose_error,
+        }
         self.state.register_evaluation(self.num_timesteps, metrics, passed)
 
         self.logger.record("curriculum/stage_id", self.state.stage_id)
         self.logger.record("curriculum/current_goal_index", self.state.current_index)
         self.logger.record("curriculum/eval_success_rate", metrics["success_rate"])
         self.logger.record("curriculum/eval_pose_error", metrics["avg_pose_error"])
+        self.logger.record("curriculum/eval_final_pose_error", metrics.get("avg_final_pose_error", metrics["avg_pose_error"]))
         self.logger.record("curriculum/eval_collision_rate", metrics["track_collision_rate"])
         self.logger.record("curriculum/consecutive_passes", self.state.consecutive_passes)
+        self.logger.record("curriculum/passed", float(passed))
 
         if self.verbose:
             print(
                 f"Curriculum goal {goal}: success={metrics['success_rate']:.2f}, "
-                f"pose={metrics['avg_pose_error']:.3f}, collision={metrics['track_collision_rate']:.2f}, "
+                f"pose={metrics['avg_pose_error']:.3f}, final_pose={metrics.get('avg_final_pose_error', 0):.3f}, "
+                f"collision={metrics['track_collision_rate']:.2f}, passed={passed}, checks={pass_checks}, "
                 f"passes={self.state.consecutive_passes}/{self.consecutive_passes_required}"
             )
 
@@ -173,7 +192,11 @@ class AutoCurriculumCallback(BaseCallback):
         return True
 
     def _update_training_goals(self) -> None:
-        self.training_env.env_method("set_allowed_goals", self.state.training_goals)
+        self.training_env.env_method(
+            "set_curriculum_goals",
+            self.state.training_goals,
+            self.state.current_goal,
+        )
 
 
 class DiagnosticVideoCallback(BaseCallback):
@@ -341,6 +364,9 @@ class DiagnosticVideoCallback(BaseCallback):
         track_collision = False
         success = False
         overspin = False
+        max_boundary_penalty = 0.0
+        max_outward_penalty = 0.0
+        absolute_actions = []
         episode_length = 0
 
         try:
@@ -359,6 +385,9 @@ class DiagnosticVideoCallback(BaseCallback):
                 track_collision = track_collision or bool(info.get("track_collision", False))
                 success = success or bool(info.get("success", False))
                 overspin = overspin or bool(info.get("omega_over_limit", False))
+                max_boundary_penalty = max(max_boundary_penalty, float(info.get("r_boundary", 0.0)))
+                max_outward_penalty = max(max_outward_penalty, float(info.get("r_outward", 0.0)))
+                absolute_actions.append(float(abs(action[0])))
 
                 if terminated or truncated:
                     break
@@ -388,6 +417,9 @@ class DiagnosticVideoCallback(BaseCallback):
             "max_abs_x": max_abs_x,
             "track_collision": bool(track_collision),
             "overspin": bool(overspin),
+            "max_boundary_penalty": max_boundary_penalty,
+            "max_outward_penalty": max_outward_penalty,
+            "mean_abs_action": sum(absolute_actions) / len(absolute_actions) if absolute_actions else 0.0,
         }
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(diagnostics, f, indent=2)

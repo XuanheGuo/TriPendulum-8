@@ -47,6 +47,8 @@ def make_callbacks(cfg, algo, curriculum_state=None):
                 max_steps=int(curriculum_cfg.get("max_steps", 1000)),
                 success_threshold=float(curriculum_cfg.get("success_threshold", 0.8)),
                 max_pose_error=float(curriculum_cfg.get("max_pose_error", 0.25)),
+                require_pose_error=bool(curriculum_cfg.get("require_pose_error", False)),
+                pose_error_key=curriculum_cfg.get("pose_error_key", "avg_final_pose_error"),
                 max_collision_rate=float(curriculum_cfg.get("max_collision_rate", 0.1)),
                 consecutive_passes_required=int(curriculum_cfg.get("consecutive_passes_required", 2)),
                 min_steps_per_goal=int(curriculum_cfg.get("min_steps_per_goal", 25000)),
@@ -121,6 +123,10 @@ def main():
         if args.resume_replay_buffer and os.path.exists(args.resume_replay_buffer):
             print(f"Loading replay buffer from {args.resume_replay_buffer}")
             model.load_replay_buffer(args.resume_replay_buffer)
+        else:
+            fresh_buffer_warmup = int(algo.get("resume_learning_starts", 5000))
+            model.learning_starts = model.num_timesteps + fresh_buffer_warmup
+            print(f"Using a fresh replay buffer; collecting {fresh_buffer_warmup} steps before updates resume")
     else:
         model = SAC(
             algo.get("policy", "MlpPolicy"),

@@ -3,13 +3,15 @@ algorithm:
   name: SAC
   total_timesteps: 300000
   learning_rate: 0.0003
-  buffer_size: 500000
-  batch_size: 256
+  buffer_size: 300000
+  batch_size: 128
   gamma: 0.99
   tau: 0.005
-  train_freq: 1
-  gradient_steps: 1
+  train_freq: 8
+  gradient_steps: 2
   learning_starts: 5000
+  resume_learning_starts: 5000
   ent_coef: auto
   policy: MlpPolicy
-  save_freq: 25000
+  save_freq: 100000
+  save_replay_buffer: false

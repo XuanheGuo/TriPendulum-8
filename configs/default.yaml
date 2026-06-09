@@ -11,19 +11,29 @@ env:
   omega_threshold: 1.0
   stable_steps_required: 25
   collision_penalty: 250.0
-  random_initial_state: false
+  random_initial_state: true
+  initial_cart_position_noise: 0.05
+  initial_cart_velocity_noise: 0.05
   initial_angle_noise: 0.05
   initial_velocity_noise: 0.05
+  primary_goal_probability: 0.8
+  primary_goal_near_target_probability: 0.15
+  near_target_angle_noise: 0.12
+  near_target_velocity_noise: 0.1
 reward:
   w_pose: 4.0
-  w_vel: 0.05
-  w_act: 0.001
+  w_vel: 0.005
+  w_act: 0.0002
   w_track: 6.0
-  w_spin: 0.02
-  w_delta_a: 0.01
+  w_boundary: 25.0
+  w_outward: 2.0
+  w_pose_progress: 8.0
+  w_spin: 0.002
+  w_delta_a: 0.001
   lambda_x: 1.0
   lambda_omega: 1.0
   lambda_delta_a: 1.0
+  soft_boundary_ratio: 0.7
   success_bonus: 50.0
 paths:
   checkpoint_dir: checkpoints
@@ -36,11 +46,13 @@ curriculum:
   start_index: 0
   retain_previous_goals: true
   resume_state: true
-  eval_freq: 10000
-  n_eval_episodes: 5
+  eval_freq: 25000
+  n_eval_episodes: 3
   max_steps: 1000
-  min_steps_per_goal: 10000
+  min_steps_per_goal: 25000
   success_threshold: 0.8
+  require_pose_error: false
+  pose_error_key: avg_final_pose_error
   max_pose_error: 2.0
   max_collision_rate: 0.2
   consecutive_passes_required: 2

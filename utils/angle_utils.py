@@ -18,6 +18,23 @@ def relative_to_absolute(q):
     return wrap_angle(np.cumsum(q, axis=-1))
 
 
+def absolute_to_relative(theta):
+    """Convert absolute link angles to MuJoCo relative hinge angles."""
+    theta = np.asarray(theta, dtype=np.float64)
+    if theta.shape[-1] != 3:
+        raise ValueError(f"Expected final dimension of size 3, got shape {theta.shape}")
+    return wrap_angle(
+        np.stack(
+            [
+                theta[..., 0],
+                theta[..., 1] - theta[..., 0],
+                theta[..., 2] - theta[..., 1],
+            ],
+            axis=-1,
+        )
+    )
+
+
 def angle_error(theta, theta_goal):
     """Return wrapped signed angle error theta - theta_goal."""
     return wrap_angle(np.asarray(theta) - np.asarray(theta_goal))

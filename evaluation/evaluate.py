@@ -48,6 +48,8 @@ def evaluate_goal_metrics(
                 max_abs_x = 0.0
                 collisions = 0
                 pose_errors = []
+                final_pose_error = np.nan
+                min_pose_error = np.nan
                 stable_time = 0
                 success = False
                 terminated = truncated = False
@@ -65,12 +67,17 @@ def evaluate_goal_metrics(
                     max_abs_x = max(max_abs_x, abs(float(info.get("x", 0.0))))
                     collisions += int(info.get("track_collision", False))
                     pose_errors.append(float(info.get("r_pose", np.nan)))
+                    final_pose_error = float(info.get("r_pose", np.nan))
                     success = success or bool(info.get("success", False))
+                if pose_errors:
+                    min_pose_error = float(np.nanmin(pose_errors))
                 stats.append(
                     {
                         "success": float(success),
                         "reward": total_reward,
                         "pose_error": float(np.nanmean(pose_errors)) if pose_errors else float("nan"),
+                        "final_pose_error": final_pose_error,
+                        "min_pose_error": min_pose_error,
                         "episode_length": episode_length,
                         "stable_time": stable_time,
                         "energy": energy,
@@ -82,6 +89,8 @@ def evaluate_goal_metrics(
                 "success_rate": float(np.mean([s["success"] for s in stats])),
                 "avg_reward": float(np.mean([s["reward"] for s in stats])),
                 "avg_pose_error": float(np.nanmean([s["pose_error"] for s in stats])),
+                "avg_final_pose_error": float(np.nanmean([s["final_pose_error"] for s in stats])),
+                "avg_min_pose_error": float(np.nanmean([s["min_pose_error"] for s in stats])),
                 "avg_episode_length": float(np.mean([s["episode_length"] for s in stats])),
                 "avg_stable_time": float(np.mean([s["stable_time"] for s in stats])),
                 "track_collision_rate": float(np.mean([s["track_collision"] for s in stats])),
@@ -108,6 +117,8 @@ def evaluate_model(model, episodes_per_goal=5, deterministic=True, goals=None):
                 "success_rate": goal_metrics["success_rate"],
                 "average_reward": goal_metrics["avg_reward"],
                 "average_pose_error": goal_metrics["avg_pose_error"],
+                "average_final_pose_error": goal_metrics["avg_final_pose_error"],
+                "average_min_pose_error": goal_metrics["avg_min_pose_error"],
                 "average_stable_time": goal_metrics["avg_stable_time"],
                 "average_energy": goal_metrics["avg_energy"],
                 "average_max_cart_displacement": goal_metrics["max_abs_x"],

@@ -177,6 +177,20 @@ curriculum:
 
 Progress is persisted in `checkpoints/curriculum_state.json`. TensorBoard exposes `curriculum/stage_id`, `curriculum/eval_success_rate`, `curriculum/eval_pose_error`, `curriculum/eval_collision_rate`, and `curriculum/consecutive_passes`.
 
+Inspect the exact promotion result and failed checks with:
+
+```bash
+python training/curriculum_cli.py show
+```
+
+The latest history entry includes `pass_checks`, so a goal cannot silently remain stuck. By default promotion uses deterministic success rate and collision rate. Pose errors remain diagnostic metrics but do not block promotion unless `require_pose_error: true`.
+
+If a previously trained run is already known to have mastered the current goal, stop training and advance it manually before restarting:
+
+```bash
+python training/curriculum_cli.py advance
+```
+
 Start local SAC training with:
 
 ```bash
@@ -187,6 +201,31 @@ python training/train_sac.py \
 ```
 
 The default logical track is `x in [-4.8, 4.8]`. The visual XML track and camera match this range. Boundary reward weight and collision penalty are intentionally stronger so the extra room supports swing-up without making wall-running attractive.
+
+### DDU Swing-Up Training
+
+The sequential curriculum focuses 80% of new episodes on the current goal and uses the remaining episodes to rehearse previously learned goals. For a new non-DDD goal, 15% of current-goal episodes start near the target pose. These samples teach target stabilization; automatic promotion still evaluates from the normal near-down initial state, so near-target resets cannot satisfy the curriculum by themselves.
+
+The reward includes:
+
+- absolute pose error and pose-error improvement,
+- a soft boundary barrier starting at 70% of the track,
+- an outward-motion penalty when cart velocity points away from center,
+- a terminal collision penalty.
+
+Angular-velocity, action-energy, and action-rate regularizers are deliberately mild enough to permit the aggressive oscillatory motion needed for swing-up.
+
+This changes reward semantics but preserves the observation/action contract. You may resume an existing model checkpoint, but do not load its old replay buffer because stored transitions contain rewards from the previous formulation:
+
+```bash
+python training/train_sac.py \
+  --config configs/sac.yaml \
+  --total-timesteps 1000000 \
+  --save-path checkpoints/sac_drift_fixed.zip \
+  --resume-from checkpoints/sac_200000_steps.zip
+```
+
+The local SAC defaults use `train_freq: 8`, `gradient_steps: 2`, and `batch_size: 128` to reduce update overhead. TensorBoard exposes `rollout/max_abs_x_mean` and `rollout/terminal_abs_x` for detecting slow wall drift.
 
 ## Extensions
 
