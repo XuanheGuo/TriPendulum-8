@@ -91,6 +91,7 @@ class AutoCurriculumCallback(BaseCallback):
         max_collision_rate: float = 0.1,
         consecutive_passes_required: int = 2,
         min_steps_per_goal: int = 25000,
+        eval_seed: int | None = 10000,
         checkpoint_dir: str = "checkpoints",
         algorithm: str = "sac",
         verbose: int = 1,
@@ -109,6 +110,7 @@ class AutoCurriculumCallback(BaseCallback):
         self.max_collision_rate = float(max_collision_rate)
         self.consecutive_passes_required = int(consecutive_passes_required)
         self.min_steps_per_goal = int(min_steps_per_goal)
+        self.eval_seed = None if eval_seed is None else int(eval_seed)
         self.checkpoint_dir = checkpoint_dir
         self.algorithm = algorithm.lower()
         self.last_eval_timestep = 0
@@ -139,6 +141,7 @@ class AutoCurriculumCallback(BaseCallback):
             env_config=evaluation_env_config,
             reward_config=self.reward_config,
             max_steps=self.max_steps,
+            base_seed=self.eval_seed,
         )[goal]
         pass_checks = {
             "success_rate": metrics["success_rate"] >= self.success_threshold,

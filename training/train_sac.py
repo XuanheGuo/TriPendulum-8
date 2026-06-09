@@ -82,6 +82,7 @@ def make_callbacks(cfg, algo, curriculum_state=None):
                 max_collision_rate=float(curriculum_cfg.get("max_collision_rate", 0.1)),
                 consecutive_passes_required=int(curriculum_cfg.get("consecutive_passes_required", 2)),
                 min_steps_per_goal=int(curriculum_cfg.get("min_steps_per_goal", 25000)),
+                eval_seed=curriculum_cfg.get("eval_seed", 10000),
                 checkpoint_dir=checkpoint_dir,
                 algorithm="sac",
             )

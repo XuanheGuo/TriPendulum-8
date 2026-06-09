@@ -162,7 +162,7 @@ The default configuration trains goals in this order:
 DDD -> DDU -> DUD -> UDD -> DUU -> UDU -> UUD -> UUU
 ```
 
-The current new goal is evaluated deterministically every `10000` timesteps. It advances after two consecutive evaluations satisfy the configured success, pose-error, and collision thresholds. Previously learned goals remain in the training sampler to reduce catastrophic forgetting.
+The current new goal is evaluated deterministically on a fixed benchmark set every `50000` timesteps. The default gate requires at least 5 successes from 8 episodes (`0.625`) in two consecutive evaluations. Fixed evaluation seeds make changes reflect policy learning instead of a different random batch on every check. Previously learned goals remain in the training sampler to reduce catastrophic forgetting.
 
 ```yaml
 curriculum:
@@ -170,7 +170,9 @@ curriculum:
   mode: sequential
   auto_advance: true
   retain_previous_goals: true
-  success_threshold: 0.8
+  n_eval_episodes: 8
+  eval_seed: 10000
+  success_threshold: 0.625
   max_collision_rate: 0.2
   consecutive_passes_required: 2
 ```

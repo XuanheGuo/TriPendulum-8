@@ -62,11 +62,12 @@ curriculum:
   retain_previous_goals: true
   initial_pose_fractions: [1.0, 0.5, 0.25, 0.0]
   resume_state: true
-  eval_freq: 25000
-  n_eval_episodes: 3
+  eval_freq: 50000
+  n_eval_episodes: 8
+  eval_seed: 10000
   max_steps: 1000
   min_steps_per_goal: 25000
-  success_threshold: 0.8
+  success_threshold: 0.625
   require_pose_error: false
   pose_error_key: avg_final_pose_error
   max_pose_error: 2.0

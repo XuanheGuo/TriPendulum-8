@@ -31,6 +31,7 @@ def evaluate_goal_metrics(
     env_config=None,
     reward_config=None,
     max_steps=None,
+    base_seed=None,
 ):
     goals = list(goals or GOAL_NAMES)
     env_cfg = dict(env_config or {})
@@ -39,10 +40,13 @@ def evaluate_goal_metrics(
     env = TriPendulumGoalEnv(env_cfg if env_cfg else None)
     goal_metrics = {}
     try:
-        for goal in goals:
+        for goal_index, goal in enumerate(goals):
             stats = []
-            for _ in range(episodes_per_goal):
-                obs, _ = env.reset(goal=goal)
+            for episode_index in range(episodes_per_goal):
+                episode_seed = None
+                if base_seed is not None:
+                    episode_seed = int(base_seed) + goal_index * 1000 + episode_index
+                obs, _ = env.reset(seed=episode_seed, goal=goal)
                 total_reward = 0.0
                 energy = 0.0
                 max_abs_x = 0.0

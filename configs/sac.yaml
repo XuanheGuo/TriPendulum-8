@@ -13,7 +13,7 @@ algorithm:
   resume_learning_starts: 5000
   ent_coef: auto_0.2
   target_entropy: -1.0
-  action_noise_sigma: 4.0
+  action_noise_sigma: 2.0
   policy: MlpPolicy
   save_freq: 100000
   save_replay_buffer: false
