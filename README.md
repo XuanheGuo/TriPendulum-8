@@ -217,6 +217,8 @@ The reward includes:
 
 SAC also uses a small configurable training-only force noise (`action_noise_sigma`) and an initial entropy coefficient (`auto_0.2`). Diagnostic videos remain deterministic, so visible activity there comes from the learned policy rather than injected noise. With the default MuJoCo timestep and `frame_skip: 4`, the controller runs at 50 Hz; increasing that rate is usually less important than learning sufficiently large, correctly timed force reversals.
 
+After first satisfying the success condition, an episode remains active for `post_success_steps` additional transitions. This prevents a 25-step successful stabilization trajectory from being overwhelmed in the replay buffer by 1000-step failures. The terminal success bonus is awarded only once; the extra transitions train the policy to keep balancing and recover from small deviations.
+
 Angular-velocity, action-energy, and action-rate regularizers are deliberately mild enough to permit the aggressive oscillatory motion needed for swing-up.
 
 For links whose absolute goal is `U`, the reward also includes a capped swing-energy term while that link is far from its goal. This explicitly rewards building absolute angular velocity at the bottom, where the cosine pose objective has almost no local gradient. The term fades to zero near the target, allowing velocity penalties to brake and stabilize the link. Angular velocities used by reward, success checks, and observation are absolute link velocities obtained by cumulatively summing MuJoCo relative hinge velocities.

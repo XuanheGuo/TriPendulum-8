@@ -97,7 +97,7 @@ def compute_reward(
     stable_now = bool(pose_ready and velocity_ready and cart_ready and not track_collision)
     next_stable_steps = stable_steps + 1 if stable_now else 0
     success = next_stable_steps >= cfg.stable_steps_required
-    success_bonus = cfg.success_bonus if success else 0.0
+    success_bonus = cfg.success_bonus if next_stable_steps == cfg.stable_steps_required else 0.0
 
     reward = (
         -cfg.w_pose * r_pose

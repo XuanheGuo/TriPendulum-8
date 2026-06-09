@@ -28,6 +28,7 @@ class TriPendulumConfig:
     pose_threshold: float = 0.08
     omega_threshold: float = 1.0
     stable_steps_required: int = 25
+    post_success_steps: int = 100
     collision_penalty: float = 250.0
     random_initial_state: bool = True
     initial_cart_position_noise: float = 0.05
@@ -75,6 +76,8 @@ class TriPendulumGoalEnv(gym.Env):
         self.primary_goal = None
         self.primary_goal_initial_pose_fraction = None
         self.stable_steps = 0
+        self.episode_success = False
+        self.steps_after_success = 0
         self.step_count = 0
         self.prev_action = np.zeros(1, dtype=np.float64)
         self.prev_pose_error = 0.0
@@ -167,6 +170,8 @@ class TriPendulumGoalEnv(gym.Env):
         theta_abs = relative_to_absolute(q_relative)
 
         self.stable_steps = 0
+        self.episode_success = False
+        self.steps_after_success = 0
         self.step_count = 0
         self.prev_action = np.zeros(1, dtype=np.float64)
         self.prev_pose_error = float(np.sum(1.0 - np.cos(theta_abs - self.goal_abs_angles)))
@@ -205,7 +210,7 @@ class TriPendulumGoalEnv(gym.Env):
         theta_abs = relative_to_absolute(q_relative)
 
         track_collision = abs(x) > self.config.x_max
-        reward, success, self.stable_steps, info = compute_reward(
+        reward, success_now, self.stable_steps, info = compute_reward(
             goal_name=self.goal_name,
             theta_abs=theta_abs,
             theta_goal_abs=self.goal_abs_angles,
@@ -224,8 +229,16 @@ class TriPendulumGoalEnv(gym.Env):
         if track_collision:
             reward -= self.config.collision_penalty
 
+        if success_now and not self.episode_success:
+            self.episode_success = True
+        if self.episode_success:
+            self.steps_after_success += 1
+
         omega_over_limit = bool(np.max(np.abs(omega)) > self.config.omega_limit)
-        terminated = bool(track_collision or omega_over_limit or success)
+        success_rollout_complete = bool(
+            self.episode_success and self.steps_after_success >= self.config.post_success_steps
+        )
+        terminated = bool(track_collision or omega_over_limit or success_rollout_complete)
         truncated = bool(self.step_count >= self.config.max_episode_steps and not terminated)
 
         info.update(
@@ -237,6 +250,9 @@ class TriPendulumGoalEnv(gym.Env):
                 "omega_abs": omega.copy(),
                 "q_dot_relative": q_dot_relative.copy(),
                 "omega_over_limit": omega_over_limit,
+                "success": self.episode_success,
+                "success_rollout_complete": success_rollout_complete,
+                "steps_after_success": self.steps_after_success,
                 "time_limit": truncated,
             }
         )

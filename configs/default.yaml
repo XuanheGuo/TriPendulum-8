@@ -10,6 +10,7 @@ env:
   pose_threshold: 0.08
   omega_threshold: 1.0
   stable_steps_required: 25
+  post_success_steps: 100
   collision_penalty: 250.0
   random_initial_state: true
   initial_cart_position_noise: 0.05
