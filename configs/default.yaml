@@ -20,6 +20,8 @@ env:
   primary_goal_near_target_probability: 0.15
   near_target_angle_noise: 0.12
   near_target_velocity_noise: 0.1
+  near_target_min_angle_noise: 0.02
+  near_target_min_velocity_noise: 0.02
 reward:
   w_pose: 4.0
   w_vel: 0.005
@@ -30,13 +32,16 @@ reward:
   w_pose_progress: 8.0
   w_swing_energy: 0.03
   w_upright_height: 2.0
+  w_stability: 6.0
   w_spin: 0.002
-  w_delta_a: 0.001
+  w_delta_a: 0.0001
   lambda_x: 1.0
   lambda_omega: 1.0
   lambda_delta_a: 1.0
   soft_boundary_ratio: 0.7
   swing_velocity_cap: 8.0
+  stability_pose_scale: 4.0
+  stability_velocity_scale: 0.05
   success_bonus: 50.0
 paths:
   checkpoint_dir: checkpoints

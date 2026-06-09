@@ -20,13 +20,16 @@ class RewardConfig:
     w_pose_progress: float = 8.0
     w_swing_energy: float = 0.03
     w_upright_height: float = 2.0
+    w_stability: float = 6.0
     w_spin: float = 0.002
-    w_delta_a: float = 0.001
+    w_delta_a: float = 0.0001
     lambda_x: float = 1.0
     lambda_omega: float = 1.0
     lambda_delta_a: float = 1.0
     soft_boundary_ratio: float = 0.7
     swing_velocity_cap: float = 8.0
+    stability_pose_scale: float = 4.0
+    stability_velocity_scale: float = 0.05
     success_bonus: float = 50.0
     pose_threshold: float = 0.08
     omega_threshold: float = 1.0
@@ -81,6 +84,10 @@ def compute_reward(
     far_from_goal = np.clip(pose_terms / 2.0, 0.0, 1.0)
     capped_speed_sq = np.minimum(np.square(omega), cfg.swing_velocity_cap**2)
     r_swing_energy = float(np.sum(up_goal_mask * far_from_goal * capped_speed_sq))
+    centered = max(0.0, 1.0 - (abs(float(x)) / max(cfg.stable_x_threshold, 1e-6)) ** 2)
+    r_stability = float(
+        np.exp(-cfg.stability_pose_scale * r_pose - cfg.stability_velocity_scale * r_vel) * centered
+    )
     r_spin = float(cfg.lambda_omega * np.sum(np.square(omega)))
     r_delta_a = float(cfg.lambda_delta_a * np.sum(np.square(action - prev_action)))
 
@@ -104,6 +111,7 @@ def compute_reward(
         + cfg.w_pose_progress * r_pose_progress
         + cfg.w_swing_energy * r_swing_energy
         + cfg.w_upright_height * r_upright_height
+        + cfg.w_stability * r_stability
         + success_bonus
     )
 
@@ -121,6 +129,7 @@ def compute_reward(
         "r_pose_progress": r_pose_progress,
         "r_swing_energy": r_swing_energy,
         "r_upright_height": r_upright_height,
+        "r_stability": r_stability,
         "r_spin": r_spin,
         "r_delta_a": r_delta_a,
         "success": success,

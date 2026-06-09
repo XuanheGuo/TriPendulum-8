@@ -38,6 +38,8 @@ class TriPendulumConfig:
     primary_goal_near_target_probability: float = 0.15
     near_target_angle_noise: float = 0.12
     near_target_velocity_noise: float = 0.1
+    near_target_min_angle_noise: float = 0.02
+    near_target_min_velocity_noise: float = 0.02
     curriculum_initial_pose_fraction: float | None = None
     allowed_goals: tuple[str, ...] = field(default_factory=lambda: GOAL_NAMES)
     reward: RewardConfig = field(default_factory=RewardConfig)
@@ -143,14 +145,21 @@ class TriPendulumGoalEnv(gym.Env):
         if initial_pose_fraction is not None and self.goal_name != "DDD" and initial_pose_fraction > 0.0:
             initial_abs_angles = self.goal_abs_angles * float(initial_pose_fraction)
             target_q = absolute_to_relative(initial_abs_angles)
+            difficulty = 1.0 - float(np.clip(initial_pose_fraction, 0.0, 1.0))
+            angle_noise = self.config.near_target_min_angle_noise + difficulty * (
+                self.config.near_target_angle_noise - self.config.near_target_min_angle_noise
+            )
+            velocity_noise = self.config.near_target_min_velocity_noise + difficulty * (
+                self.config.near_target_velocity_noise - self.config.near_target_min_velocity_noise
+            )
             self.data.qpos[1:4] = target_q + self.np_random.uniform(
-                -self.config.near_target_angle_noise,
-                self.config.near_target_angle_noise,
+                -angle_noise,
+                angle_noise,
                 size=3,
             )
             self.data.qvel[1:4] = self.np_random.uniform(
-                -self.config.near_target_velocity_noise,
-                self.config.near_target_velocity_noise,
+                -velocity_noise,
+                velocity_noise,
                 size=3,
             )
         mujoco.mj_forward(self.model, self.data)

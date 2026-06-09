@@ -5,6 +5,8 @@ import os
 import sys
 from copy import deepcopy
 
+import numpy as np
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
@@ -12,6 +14,7 @@ if ROOT not in sys.path:
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.noise import NormalActionNoise
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
 from envs.tripendulum_env import TriPendulumGoalEnv
@@ -156,6 +159,13 @@ def main():
     tensorboard_dir = ensure_dir(cfg.get("paths", {}).get("tensorboard_dir", "runs"))
     checkpoint_dir = ensure_dir(cfg.get("paths", {}).get("checkpoint_dir", "checkpoints"))
     curriculum_state = create_curriculum_state(cfg.get("curriculum"), checkpoint_dir)
+    action_noise_sigma = float(algo.get("action_noise_sigma", 0.0))
+    action_noise = None
+    if action_noise_sigma > 0.0:
+        action_noise = NormalActionNoise(
+            mean=np.zeros(1, dtype=np.float32),
+            sigma=np.full(1, action_noise_sigma, dtype=np.float32),
+        )
 
     env = make_train_env(cfg, curriculum_state)
     print(
@@ -174,6 +184,7 @@ def main():
             gradient_steps=int(algo.get("gradient_steps", 1)),
             verbose=1,
         )
+        model.action_noise = action_noise
         if args.resume_replay_buffer and os.path.exists(args.resume_replay_buffer):
             print(f"Loading replay buffer from {args.resume_replay_buffer}")
             model.load_replay_buffer(args.resume_replay_buffer)
@@ -194,6 +205,8 @@ def main():
             gradient_steps=int(algo.get("gradient_steps", 1)),
             learning_starts=int(algo.get("learning_starts", 5000)),
             ent_coef=algo.get("ent_coef", "auto"),
+            target_entropy=algo.get("target_entropy", "auto"),
+            action_noise=action_noise,
             tensorboard_log=tensorboard_dir,
             device=runtime_cfg.get("device", "auto"),
             verbose=1,

@@ -144,7 +144,7 @@ videos/diagnostics/sac_step_150000_stage_2_goal_DUD.json
 videos/diagnostics/diagnostic_step_150000.json
 ```
 
-The per-video JSON sidecar records algorithm, timestep, curriculum status, stage id, stage goals, selected goal, selection reason, success, reward, episode length, final absolute-pose error, max cart displacement, track collision, and overspin status. The `diagnostic_step_*.json` report records evaluated goals, video goals, and all per-goal metrics.
+The per-video JSON sidecar records algorithm, timestep, curriculum status, stage id, stage goals, selected goal, selection reason, success, reward, episode length, final absolute-pose error, max cart displacement, track collision, and overspin status. It also records `mean_abs_action`, `max_abs_action`, `std_action`, and `action_reversal_rate`, which distinguish an inactive policy from a genuine alternating swing-up controller. The `diagnostic_step_*.json` report records evaluated goals, video goals, and all per-goal metrics.
 
 These videos are intended to inspect whether the policy:
 
@@ -209,9 +209,13 @@ The sequential curriculum focuses 80% of new episodes on the current goal and us
 The reward includes:
 
 - absolute pose error and pose-error improvement,
+- a continuous near-target stability reward, so holding an unstable upright link is valuable before the terminal success bonus,
+- a reduced action-change penalty that permits force reversals needed for swing-up,
 - a soft boundary barrier starting at 70% of the track,
 - an outward-motion penalty when cart velocity points away from center,
 - a terminal collision penalty.
+
+SAC also uses a small configurable training-only force noise (`action_noise_sigma`) and an initial entropy coefficient (`auto_0.2`). Diagnostic videos remain deterministic, so visible activity there comes from the learned policy rather than injected noise. With the default MuJoCo timestep and `frame_skip: 4`, the controller runs at 50 Hz; increasing that rate is usually less important than learning sufficiently large, correctly timed force reversals.
 
 Angular-velocity, action-energy, and action-rate regularizers are deliberately mild enough to permit the aggressive oscillatory motion needed for swing-up.
 

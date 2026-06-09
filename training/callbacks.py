@@ -7,6 +7,7 @@ import os
 from collections import defaultdict, deque
 from copy import deepcopy
 
+import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
 
 from envs.goals import GOAL_NAMES
@@ -389,6 +390,7 @@ class DiagnosticVideoCallback(BaseCallback):
         max_boundary_penalty = 0.0
         max_outward_penalty = 0.0
         absolute_actions = []
+        signed_actions = []
         max_abs_omega = 0.0
         swing_energy_rewards = []
         episode_length = 0
@@ -412,6 +414,7 @@ class DiagnosticVideoCallback(BaseCallback):
                 max_boundary_penalty = max(max_boundary_penalty, float(info.get("r_boundary", 0.0)))
                 max_outward_penalty = max(max_outward_penalty, float(info.get("r_outward", 0.0)))
                 absolute_actions.append(float(abs(action[0])))
+                signed_actions.append(float(action[0]))
                 omega_abs = info.get("omega_abs", [])
                 if len(omega_abs):
                     max_abs_omega = max(max_abs_omega, max(abs(float(value)) for value in omega_abs))
@@ -429,6 +432,11 @@ class DiagnosticVideoCallback(BaseCallback):
         if frames:
             save_mp4(frames, video_path, fps=self.fps)
 
+        action_reversals = sum(
+            1
+            for previous, current in zip(signed_actions, signed_actions[1:])
+            if abs(previous) > 1.0 and abs(current) > 1.0 and previous * current < 0.0
+        )
         diagnostics = {
             "algorithm": self.algorithm,
             "timestep": int(self.num_timesteps),
@@ -452,6 +460,11 @@ class DiagnosticVideoCallback(BaseCallback):
             "max_boundary_penalty": max_boundary_penalty,
             "max_outward_penalty": max_outward_penalty,
             "mean_abs_action": sum(absolute_actions) / len(absolute_actions) if absolute_actions else 0.0,
+            "max_abs_action": max(absolute_actions) if absolute_actions else 0.0,
+            "std_action": float(np.std(signed_actions)) if signed_actions else 0.0,
+            "action_reversal_rate": (
+                action_reversals / max(len(signed_actions) - 1, 1) if signed_actions else 0.0
+            ),
             "max_abs_omega": max_abs_omega,
             "mean_swing_energy_reward": (
                 sum(swing_energy_rewards) / len(swing_energy_rewards) if swing_energy_rewards else 0.0
