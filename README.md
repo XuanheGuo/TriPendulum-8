@@ -81,6 +81,8 @@ python evaluation/evaluate.py --model checkpoints/sac_best.zip
 
 For Colab Pro, open `notebooks/colab_train.ipynb`, set the top parameter cell if needed, then run `Runtime -> Run all`. The notebook installs dependencies, checks MuJoCo, writes Colab-specific configs, starts TensorBoard, trains SAC/PPO, records dynamic diagnostic videos, evaluates all 8 goals, builds the 8x8 transition heatmap, renders a final video, and packages results.
 
+Open the `codex` branch notebook directly in Colab: [colab_train.ipynb](https://colab.research.google.com/github/XuanheGuo/TriPendulum-8/blob/codex/notebooks/colab_train.ipynb). The notebook automatically clones or updates the `codex` branch. To start a genuinely fresh run without deleting old Drive outputs, choose a new `RUN_NAME`; keep that same name when reconnecting so `AUTO_RESUME` can restore its latest checkpoint.
+
 The notebook defaults to Google Drive persistence while keeping high-frequency TensorBoard writes on the Colab local SSD:
 
 ```python
