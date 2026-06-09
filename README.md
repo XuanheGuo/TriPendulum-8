@@ -1,5 +1,7 @@
 # TriPendulum-8
 
+An experimental GPU-parallel implementation is available separately under [`mjx_backend/`](mjx_backend/) with its own configuration and Colab notebook. See [`MJX_README.md`](MJX_README.md). The original Gymnasium/MuJoCo/SB3 implementation remains unchanged and supported.
+
 TriPendulum-8 is a Goal-Conditioned reinforcement learning project for a cart-mounted serial triple inverted pendulum. The system has one active actuator only: horizontal force on the cart.
 
 The action is strictly:

@@ -1,0 +1,86 @@
+"""Train TriPendulum-8 with GPU-vectorized MJX and Brax PPO."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import time
+from pathlib import Path
+
+os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+
+import jax
+import numpy as np
+import yaml
+from brax.io import model
+from tensorboardX import SummaryWriter
+
+from mjx_backend.env import TriPendulumMJXEnv
+from mjx_backend.training import make_train_fn
+
+
+def load_config(path: str) -> dict:
+    with open(path, "r", encoding="utf-8") as file:
+        return yaml.safe_load(file)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", default="configs/mjx_ppo.yaml")
+    parser.add_argument("--num-timesteps", type=int, default=None)
+    parser.add_argument("--output-dir", default=None)
+    args = parser.parse_args()
+
+    config = load_config(args.config)
+    if args.num_timesteps is not None:
+        config["ppo"]["num_timesteps"] = args.num_timesteps
+    output_dir = Path(args.output_dir or config["paths"]["output_dir"])
+    checkpoint_dir = output_dir / "checkpoints"
+    log_dir = output_dir / "logs"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    with open(output_dir / "resolved_config.yaml", "w", encoding="utf-8") as file:
+        yaml.safe_dump(config, file, sort_keys=False)
+
+    print("JAX devices:", jax.devices())
+    if jax.default_backend() != "gpu":
+        raise RuntimeError("MJX training requires a JAX GPU backend; select a Colab GPU runtime.")
+
+    env = TriPendulumMJXEnv(config["env"], backend="mjx")
+    train_fn = make_train_fn(config)
+    writer = SummaryWriter(str(log_dir))
+    history_path = output_dir / "metrics.jsonl"
+    start_time = time.time()
+
+    def progress(step: int, metrics: dict) -> None:
+        elapsed = max(time.time() - start_time, 1e-6)
+        serializable = {key: float(np.asarray(value)) for key, value in metrics.items()}
+        serializable.update({"step": int(step), "elapsed_seconds": elapsed, "steps_per_second": step / elapsed})
+        with open(history_path, "a", encoding="utf-8") as file:
+            file.write(json.dumps(serializable) + "\n")
+        for key, value in serializable.items():
+            if key not in {"step", "elapsed_seconds"}:
+                writer.add_scalar(key, value, step)
+        writer.flush()
+        reward = serializable.get("eval/episode_reward", float("nan"))
+        print(f"step={step:,} reward={reward:.3f} speed={step / elapsed:,.0f} steps/s")
+
+    def save_checkpoint(step: int, _make_policy, params) -> None:
+        path = checkpoint_dir / f"ppo_step_{int(step)}.params"
+        model.save_params(path, params)
+        model.save_params(checkpoint_dir / "latest.params", params)
+
+    make_policy, params, metrics = train_fn(
+        environment=env,
+        progress_fn=progress,
+        policy_params_fn=save_checkpoint,
+    )
+    model.save_params(checkpoint_dir / "final.params", params)
+    writer.close()
+    print("Training complete:", checkpoint_dir / "final.params")
+    print("Final metrics:", metrics)
+
+
+if __name__ == "__main__":
+    main()
