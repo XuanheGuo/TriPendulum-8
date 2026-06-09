@@ -215,6 +215,8 @@ The reward includes:
 
 Angular-velocity, action-energy, and action-rate regularizers are deliberately mild enough to permit the aggressive oscillatory motion needed for swing-up.
 
+For links whose absolute goal is `U`, the reward also includes a capped swing-energy term while that link is far from its goal. This explicitly rewards building absolute angular velocity at the bottom, where the cosine pose objective has almost no local gradient. The term fades to zero near the target, allowing velocity penalties to brake and stabilize the link. Angular velocities used by reward, success checks, and observation are absolute link velocities obtained by cumulatively summing MuJoCo relative hinge velocities.
+
 This changes reward semantics but preserves the observation/action contract. You may resume an existing model checkpoint, but do not load its old replay buffer because stored transitions contain rewards from the previous formulation:
 
 ```bash

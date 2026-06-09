@@ -367,6 +367,8 @@ class DiagnosticVideoCallback(BaseCallback):
         max_boundary_penalty = 0.0
         max_outward_penalty = 0.0
         absolute_actions = []
+        max_abs_omega = 0.0
+        swing_energy_rewards = []
         episode_length = 0
 
         try:
@@ -388,6 +390,10 @@ class DiagnosticVideoCallback(BaseCallback):
                 max_boundary_penalty = max(max_boundary_penalty, float(info.get("r_boundary", 0.0)))
                 max_outward_penalty = max(max_outward_penalty, float(info.get("r_outward", 0.0)))
                 absolute_actions.append(float(abs(action[0])))
+                omega_abs = info.get("omega_abs", [])
+                if len(omega_abs):
+                    max_abs_omega = max(max_abs_omega, max(abs(float(value)) for value in omega_abs))
+                swing_energy_rewards.append(float(info.get("r_swing_energy", 0.0)))
 
                 if terminated or truncated:
                     break
@@ -420,6 +426,10 @@ class DiagnosticVideoCallback(BaseCallback):
             "max_boundary_penalty": max_boundary_penalty,
             "max_outward_penalty": max_outward_penalty,
             "mean_abs_action": sum(absolute_actions) / len(absolute_actions) if absolute_actions else 0.0,
+            "max_abs_omega": max_abs_omega,
+            "mean_swing_energy_reward": (
+                sum(swing_energy_rewards) / len(swing_energy_rewards) if swing_energy_rewards else 0.0
+            ),
         }
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(diagnostics, f, indent=2)

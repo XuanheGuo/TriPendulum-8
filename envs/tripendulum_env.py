@@ -11,7 +11,7 @@ import numpy as np
 from gymnasium import spaces
 
 from envs.goals import GOAL_NAMES, get_goal, sample_goal
-from utils.angle_utils import absolute_to_relative, relative_to_absolute
+from utils.angle_utils import absolute_to_relative, relative_to_absolute, relative_velocity_to_absolute
 from utils.reward import RewardConfig, compute_reward
 
 
@@ -189,7 +189,8 @@ class TriPendulumGoalEnv(gym.Env):
         x_dot = float(self.data.qvel[0])
         self.max_abs_x = max(self.max_abs_x, abs(x))
         q_relative = np.array(self.data.qpos[1:4], dtype=np.float64)
-        omega = np.array(self.data.qvel[1:4], dtype=np.float64)
+        q_dot_relative = np.array(self.data.qvel[1:4], dtype=np.float64)
+        omega = relative_velocity_to_absolute(q_dot_relative)
         theta_abs = relative_to_absolute(q_relative)
 
         track_collision = abs(x) > self.config.x_max
@@ -222,6 +223,8 @@ class TriPendulumGoalEnv(gym.Env):
                 "x_max": self.config.x_max,
                 "max_abs_x": self.max_abs_x,
                 "action": clipped_action.copy(),
+                "omega_abs": omega.copy(),
+                "q_dot_relative": q_dot_relative.copy(),
                 "omega_over_limit": omega_over_limit,
                 "time_limit": truncated,
             }
@@ -235,7 +238,7 @@ class TriPendulumGoalEnv(gym.Env):
         x_dot = float(self.data.qvel[0])
         q = np.array(self.data.qpos[1:4], dtype=np.float64)
         theta_abs = relative_to_absolute(q)
-        omega = np.array(self.data.qvel[1:4], dtype=np.float64)
+        omega = relative_velocity_to_absolute(np.array(self.data.qvel[1:4], dtype=np.float64))
         obs = np.array(
             [
                 x,

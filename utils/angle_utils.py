@@ -35,6 +35,14 @@ def absolute_to_relative(theta):
     )
 
 
+def relative_velocity_to_absolute(q_dot):
+    """Convert relative hinge velocities to absolute link angular velocities."""
+    q_dot = np.asarray(q_dot, dtype=np.float64)
+    if q_dot.shape[-1] != 3:
+        raise ValueError(f"Expected final dimension of size 3, got shape {q_dot.shape}")
+    return np.cumsum(q_dot, axis=-1)
+
+
 def angle_error(theta, theta_goal):
     """Return wrapped signed angle error theta - theta_goal."""
     return wrap_angle(np.asarray(theta) - np.asarray(theta_goal))
