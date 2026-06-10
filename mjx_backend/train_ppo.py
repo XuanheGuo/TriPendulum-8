@@ -31,6 +31,8 @@ def main() -> None:
     parser.add_argument("--config", default="configs/mjx_ppo.yaml")
     parser.add_argument("--num-timesteps", type=int, default=None)
     parser.add_argument("--output-dir", default=None)
+    parser.add_argument("--resume-stage", type=int, default=None,
+                        help="Resume from this stage (1-indexed). Loads stage_N_final.params from checkpoint_dir as starting params.")
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -77,8 +79,22 @@ def main() -> None:
     ]
     stages = config.get("curriculum", {}).get("stages", default_stages)
 
+    resume_stage = args.resume_stage  # 1-indexed; None means start fresh
     params = None
-    for i, stage in enumerate(stages):
+    if resume_stage is not None:
+        prev_ckpt = checkpoint_dir / f"stage_{resume_stage - 1}_final.params"
+        latest_ckpt = checkpoint_dir / "latest.params"
+        if resume_stage > 1 and prev_ckpt.exists():
+            params = model.load_params(prev_ckpt)
+            print(f"Resuming from {prev_ckpt}")
+        elif latest_ckpt.exists():
+            params = model.load_params(latest_ckpt)
+            print(f"Resuming from {latest_ckpt}")
+        else:
+            print(f"Warning: no checkpoint found for stage {resume_stage}, starting fresh")
+
+    start_stage = (resume_stage - 1) if resume_stage is not None else 0
+    for i, stage in enumerate(stages[start_stage:], start=start_stage):
         stage_goals = stage["goals"]
         stage_timesteps = int(stage["timesteps"])
         print(f"\n=== Stage {i+1}/{len(stages)}: goals={stage_goals}, timesteps={stage_timesteps:,} ===")
