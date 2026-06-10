@@ -220,6 +220,7 @@ class TriPendulumMJXEnv(mjx_env.MjxEnv):
             "max_abs_x": jnp.abs(x),
             "energy": r_act,
             "initial_pose_fraction": state.info["initial_pose_fraction"],
+            "reward": reward,
         }
         obs = self._get_obs(data, state.info["goal_binary"])
         return mjx_env.State(data, obs, reward, done.astype(jnp.float32), metrics, info)
@@ -256,4 +257,5 @@ class TriPendulumMJXEnv(mjx_env.MjxEnv):
             "max_abs_x": zero,
             "energy": zero,
             "initial_pose_fraction": zero,
+            "reward": zero,
         }
