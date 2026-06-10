@@ -83,7 +83,8 @@ def compute_reward(
     r_upright_height = float(np.sum(up_goal_mask * 0.5 * (1.0 - np.cos(theta_abs))))
     far_from_goal = np.clip(pose_terms / 2.0, 0.0, 1.0)
     capped_speed_sq = np.minimum(np.square(omega), cfg.swing_velocity_cap**2)
-    r_swing_energy = float(np.sum(up_goal_mask * far_from_goal * capped_speed_sq))
+    swing_gate = 1.0 - float(np.exp(-cfg.stability_pose_scale * r_pose))
+    r_swing_energy = float(np.sum(up_goal_mask * far_from_goal * capped_speed_sq)) * swing_gate
     centered = max(0.0, 1.0 - (abs(float(x)) / max(cfg.stable_x_threshold, 1e-6)) ** 2)
     r_stability = float(
         np.exp(-cfg.stability_pose_scale * r_pose - cfg.stability_velocity_scale * r_vel) * centered

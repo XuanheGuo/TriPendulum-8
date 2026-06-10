@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import dataclasses
+
 import jax
 import jax.numpy as jnp
 from ml_collections import config_dict
@@ -12,20 +14,15 @@ import mujoco
 from mujoco import mjx
 from mujoco_playground._src import mjx_env
 
+from envs.goals import GOAL_NAMES as _GOAL_NAMES
+from envs.goals import GOAL_BINARY as _GOAL_BINARY_NP
+from utils.reward import RewardConfig as _RewardConfig
 
 GOAL_BINARY = jnp.asarray(
-    [
-        [0.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0],
-        [0.0, 1.0, 0.0],
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 1.0],
-        [1.0, 0.0, 1.0],
-        [1.0, 1.0, 0.0],
-        [1.0, 1.0, 1.0],
-    ],
-    dtype=jnp.float32,
+    [_GOAL_BINARY_NP[name] for name in _GOAL_NAMES], dtype=jnp.float32
 )
+
+_RC_DEFAULTS = {f.name: f.default for f in dataclasses.fields(_RewardConfig)}
 
 
 def wrap_angle(angle: jax.Array) -> jax.Array:
@@ -167,7 +164,8 @@ class TriPendulumMJXEnv(mjx_env.MjxEnv):
         r_upright_height = jnp.sum(up_mask * 0.5 * (1.0 - jnp.cos(theta_abs)))
         far_from_goal = jnp.clip(pose_terms / 2.0, 0.0, 1.0)
         speed_cap = self._r("swing_velocity_cap", 8.0)
-        r_swing_energy = jnp.sum(up_mask * far_from_goal * jnp.minimum(jnp.square(omega_abs), speed_cap**2))
+        swing_gate = 1.0 - jnp.exp(-self._r("stability_pose_scale") * r_pose)
+        r_swing_energy = jnp.sum(up_mask * far_from_goal * jnp.minimum(jnp.square(omega_abs), speed_cap**2)) * swing_gate
         centered = jnp.maximum(0.0, 1.0 - jnp.square(jnp.abs(x) / self.stable_x_threshold))
         r_stability = jnp.exp(
             -self._r("stability_pose_scale", 4.0) * r_pose
@@ -243,7 +241,9 @@ class TriPendulumMJXEnv(mjx_env.MjxEnv):
             ]
         )
 
-    def _r(self, name: str, default: float) -> float:
+    def _r(self, name: str, default: float = None) -> float:
+        if default is None:
+            default = _RC_DEFAULTS.get(name, 0.0)
         return float(self.reward_cfg.get(name, default))
 
     @staticmethod

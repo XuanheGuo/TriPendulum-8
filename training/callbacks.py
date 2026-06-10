@@ -103,7 +103,7 @@ class AutoCurriculumCallback(BaseCallback):
         self.eval_freq = int(eval_freq)
         self.n_eval_episodes = int(n_eval_episodes)
         self.max_steps = int(max_steps)
-        self.success_threshold = float(success_threshold)
+        self.success_threshold = success_threshold  # float | dict
         self.max_pose_error = float(max_pose_error)
         self.require_pose_error = bool(require_pose_error)
         self.pose_error_key = pose_error_key
@@ -143,8 +143,13 @@ class AutoCurriculumCallback(BaseCallback):
             max_steps=self.max_steps,
             base_seed=self.eval_seed,
         )[goal]
+        threshold = (
+            self.success_threshold.get(goal, self.success_threshold.get("default", 0.8))
+            if isinstance(self.success_threshold, dict)
+            else self.success_threshold
+        )
         pass_checks = {
-            "success_rate": metrics["success_rate"] >= self.success_threshold,
+            "success_rate": metrics["success_rate"] >= threshold,
             "track_collision_rate": metrics["track_collision_rate"] <= self.max_collision_rate,
         }
         if self.require_pose_error:
@@ -152,7 +157,7 @@ class AutoCurriculumCallback(BaseCallback):
         passed = bool(all(pass_checks.values()))
         metrics["pass_checks"] = pass_checks
         metrics["pass_thresholds"] = {
-            "success_threshold": self.success_threshold,
+            "success_threshold": threshold,
             "max_collision_rate": self.max_collision_rate,
             "require_pose_error": self.require_pose_error,
             "pose_error_key": self.pose_error_key,

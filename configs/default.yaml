@@ -67,7 +67,12 @@ curriculum:
   eval_seed: 10000
   max_steps: 1000
   min_steps_per_goal: 25000
-  success_threshold: 0.625
+  success_threshold:
+    default: 0.625
+    DDD: 0.80
+    UUU: 0.50
+    UUD: 0.55
+    UDU: 0.55
   require_pose_error: false
   pose_error_key: avg_final_pose_error
   max_pose_error: 2.0

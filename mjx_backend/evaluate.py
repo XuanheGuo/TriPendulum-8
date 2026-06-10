@@ -13,11 +13,9 @@ from brax.io import model
 from mujoco import mjx
 from mujoco_playground._src import wrapper
 
+from envs.goals import GOAL_NAMES
 from mjx_backend.env import GOAL_BINARY, TriPendulumMJXEnv
 from mjx_backend.training import make_train_fn
-
-
-GOAL_NAMES = ("DDD", "DDU", "DUD", "UDD", "DUU", "UDU", "UUD", "UUU")
 
 
 def load_policy(config: dict, checkpoint: str, env):
