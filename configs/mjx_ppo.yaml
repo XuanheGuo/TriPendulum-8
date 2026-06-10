@@ -13,13 +13,13 @@ env:
   initial_pose_fractions: [1.0, 0.5, 0.25, 0.0]
   initial_pose_probabilities: [0.4, 0.3, 0.2, 0.1]
   reward:
-    w_pose: 4.0
+    w_pose: 8.0
     w_vel: 0.005
     w_act: 0.0002
     w_track: 6.0
-    w_boundary: 10.0
+    w_boundary: 25.0
     w_outward: 2.0
-    w_pose_progress: 8.0
+    w_pose_progress: 16.0
     w_swing_energy: 0.03
     w_upright_height: 2.0
     w_stability: 6.0
