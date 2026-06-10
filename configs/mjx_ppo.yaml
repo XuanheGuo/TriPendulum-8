@@ -17,7 +17,7 @@ env:
     w_vel: 0.005
     w_act: 0.0002
     w_track: 6.0
-    w_boundary: 25.0
+    w_boundary: 10.0
     w_outward: 2.0
     w_pose_progress: 8.0
     w_swing_energy: 0.03
@@ -34,11 +34,13 @@ env:
 curriculum:
   stages:
     - goals: ["DDD"]
-      timesteps: 50000000
-    - goals: ["DDD", "DDU", "DUD", "UDD"]
-      timesteps: 150000000
+      timesteps: 20000000
+    - goals: ["DDU", "DUD"]
+      timesteps: 80000000
+    - goals: ["UDD"]
+      timesteps: 80000000
     - goals: ["DDD", "DDU", "DUD", "UDD", "DUU", "UDU", "UUD", "UUU"]
-      timesteps: 300000000
+      timesteps: 320000000
 
 ppo:
   num_timesteps: 500000000
@@ -48,7 +50,7 @@ ppo:
   learning_rate: 0.0003
   discounting: 0.99
   entropy_cost: 0.01
-  reward_scaling: 0.1
+  reward_scaling: 0.01
   unroll_length: 20
   batch_size: 2048
   num_minibatches: 32
