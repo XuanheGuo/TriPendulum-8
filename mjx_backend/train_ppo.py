@@ -48,8 +48,6 @@ def main() -> None:
     if jax.default_backend() != "gpu":
         raise RuntimeError("MJX training requires a JAX GPU backend; select a Colab GPU runtime.")
 
-    env = TriPendulumMJXEnv(config["env"])
-    train_fn = make_train_fn(config)
     writer = SummaryWriter(str(log_dir))
     history_path = output_dir / "metrics.jsonl"
     start_time = time.time()
@@ -72,12 +70,28 @@ def main() -> None:
         model.save_params(path, params)
         model.save_params(checkpoint_dir / "latest.params", params)
 
-    make_policy, params, metrics = train_fn(
-        environment=env,
-        progress_fn=progress,
-        policy_params_fn=save_checkpoint,
-        wrap_env_fn=wrapper.wrap_for_brax_training,
-    )
+    default_stages = [
+        {"goals": ["DDD"], "timesteps": 50_000_000},
+        {"goals": ["DDD", "DDU", "DUD", "UDD"], "timesteps": 150_000_000},
+        {"goals": ["DDD", "DDU", "DUD", "UDD", "DUU", "UDU", "UUD", "UUU"], "timesteps": 300_000_000},
+    ]
+    stages = config.get("curriculum", {}).get("stages", default_stages)
+
+    params = None
+    for i, stage in enumerate(stages):
+        stage_goals = stage["goals"]
+        stage_timesteps = int(stage["timesteps"])
+        print(f"\n=== Stage {i+1}/{len(stages)}: goals={stage_goals}, timesteps={stage_timesteps:,} ===")
+        stage_env = TriPendulumMJXEnv({**config["env"], "allowed_goals": stage_goals})
+        stage_train_fn = make_train_fn(config, num_timesteps=stage_timesteps, restore_params=params)
+        make_policy, params, metrics = stage_train_fn(
+            environment=stage_env,
+            progress_fn=progress,
+            policy_params_fn=save_checkpoint,
+            wrap_env_fn=wrapper.wrap_for_brax_training,
+        )
+        model.save_params(checkpoint_dir / f"stage_{i+1}_final.params", params)
+        print(f"Stage {i+1} complete. metrics={metrics}")
     model.save_params(checkpoint_dir / "final.params", params)
     writer.close()
     print("Training complete:", checkpoint_dir / "final.params")

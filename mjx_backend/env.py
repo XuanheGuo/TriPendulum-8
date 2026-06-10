@@ -75,6 +75,9 @@ class TriPendulumMJXEnv(mjx_env.MjxEnv):
         )
         self.initial_pose_probabilities /= jnp.sum(self.initial_pose_probabilities)
         self.reward_cfg = self.config.get("reward", {})
+        _all = list(_GOAL_NAMES)
+        allowed = self.config.get("allowed_goals", _all)
+        self._allowed_indices = jnp.asarray([_all.index(g) for g in allowed], dtype=jnp.int32)
 
     @property
     def action_size(self) -> int:
@@ -94,7 +97,8 @@ class TriPendulumMJXEnv(mjx_env.MjxEnv):
 
     def reset(self, rng: jax.Array) -> mjx_env.State:
         rng_goal, rng_fraction, rng_q, rng_qd, rng_cart = jax.random.split(rng, 5)
-        goal_index = jax.random.randint(rng_goal, (), 0, 8)
+        slot = jax.random.randint(rng_goal, (), 0, self._allowed_indices.shape[0])
+        goal_index = self._allowed_indices[slot]
         goal_binary = GOAL_BINARY[goal_index]
         goal_abs = goal_binary * jnp.pi
         fraction_index = jax.random.choice(

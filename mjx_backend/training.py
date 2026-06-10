@@ -8,7 +8,7 @@ from brax.training.agents.ppo import networks as ppo_networks
 from brax.training.agents.ppo import train as ppo_train
 
 
-def make_train_fn(config: dict, num_timesteps: int | None = None):
+def make_train_fn(config: dict, num_timesteps: int | None = None, restore_params=None):
     ppo = config["ppo"]
     hidden = tuple(int(value) for value in ppo.get("hidden_layer_sizes", [256, 256, 256]))
     network_factory = functools.partial(
@@ -16,8 +16,7 @@ def make_train_fn(config: dict, num_timesteps: int | None = None):
         policy_hidden_layer_sizes=hidden,
         value_hidden_layer_sizes=hidden,
     )
-    return functools.partial(
-        ppo_train.train,
+    kwargs = dict(
         num_timesteps=int(ppo["num_timesteps"] if num_timesteps is None else num_timesteps),
         num_evals=int(ppo.get("num_evals", 20)),
         reward_scaling=float(ppo.get("reward_scaling", 0.1)),
@@ -35,3 +34,6 @@ def make_train_fn(config: dict, num_timesteps: int | None = None):
         seed=int(ppo.get("seed", 42)),
         network_factory=network_factory,
     )
+    if restore_params is not None:
+        kwargs["restore_params"] = restore_params
+    return functools.partial(ppo_train.train, **kwargs)

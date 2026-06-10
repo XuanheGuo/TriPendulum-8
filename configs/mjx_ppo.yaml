@@ -11,7 +11,7 @@ env:
   post_success_steps: 100
   collision_penalty: 250.0
   initial_pose_fractions: [1.0, 0.5, 0.25, 0.0]
-  initial_pose_probabilities: [0.2, 0.2, 0.2, 0.4]
+  initial_pose_probabilities: [0.4, 0.3, 0.2, 0.1]
   reward:
     w_pose: 4.0
     w_vel: 0.005
@@ -31,8 +31,17 @@ env:
     stability_velocity_scale: 0.05
     success_bonus: 50.0
 
+curriculum:
+  stages:
+    - goals: ["DDD"]
+      timesteps: 50000000
+    - goals: ["DDD", "DDU", "DUD", "UDD"]
+      timesteps: 150000000
+    - goals: ["DDD", "DDU", "DUD", "UDD", "DUU", "UDU", "UUD", "UUU"]
+      timesteps: 300000000
+
 ppo:
-  num_timesteps: 50000000
+  num_timesteps: 500000000
   num_envs: 4096
   episode_length: 1000
   num_evals: 20
