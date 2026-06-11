@@ -89,7 +89,7 @@ def compute_reward(
     r_stability = float(
         np.exp(-cfg.stability_pose_scale * r_pose - cfg.stability_velocity_scale * r_vel) * centered
     )
-    r_spin = float(cfg.lambda_omega * np.sum(np.square(omega)))
+    r_spin = float(cfg.lambda_omega * np.sum(np.square(q_relative)))
     r_delta_a = float(cfg.lambda_delta_a * np.sum(np.square(action - prev_action)))
 
     pose_ready = r_pose < cfg.pose_threshold

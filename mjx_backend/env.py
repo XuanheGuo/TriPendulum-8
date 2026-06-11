@@ -200,7 +200,7 @@ class TriPendulumMJXEnv(mjx_env.MjxEnv):
             - self._r("w_track", 6.0) * r_track
             - self._r("w_boundary", 25.0) * r_boundary
             - self._r("w_outward", 2.0) * r_outward
-            - self._r("w_spin", 0.002) * r_vel
+            - self._r("w_spin", 0.002) * jnp.sum(jnp.square(qd[1:4]))
             - self._r("w_delta_a", 0.0001) * r_delta_a
             + self._r("w_pose_progress", 8.0) * r_pose_progress
             + self._r("w_swing_energy", 0.03) * r_swing_energy
