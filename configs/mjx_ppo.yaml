@@ -34,13 +34,13 @@ env:
 curriculum:
   stages:
     - goals: ["DDD"]
-      timesteps: 20000000
-    - goals: ["DDU", "DUD"]
-      timesteps: 80000000
-    - goals: ["UDD"]
-      timesteps: 80000000
+      timesteps: 30000000
+    - goals: ["DDD", "DDU", "DUD"]
+      timesteps: 120000000
+    - goals: ["DDD", "DDU", "DUD", "UDD"]
+      timesteps: 150000000
     - goals: ["DDD", "DDU", "DUD", "UDD", "DUU", "UDU", "UUD", "UUU"]
-      timesteps: 320000000
+      timesteps: 200000000
 
 ppo:
   num_timesteps: 500000000
@@ -49,8 +49,8 @@ ppo:
   num_evals: 20
   learning_rate: 0.0003
   discounting: 0.99
-  entropy_cost: 0.01
-  reward_scaling: 0.01
+  entropy_cost: 0.005
+  reward_scaling: 0.005
   unroll_length: 20
   batch_size: 2048
   num_minibatches: 32
