@@ -3,7 +3,7 @@ env:
   max_episode_steps: 1000
   x_max: 4.8
   f_max: 40.0
-  omega_limit: 30.0
+  omega_limit: 50.0
   stable_x_threshold: 3.2
   pose_threshold: 0.08
   omega_threshold: 1.0

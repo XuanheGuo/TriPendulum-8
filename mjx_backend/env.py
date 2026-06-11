@@ -107,7 +107,7 @@ class TriPendulumMJXEnv(mjx_env.MjxEnv):
             p=self.initial_pose_probabilities,
         )
         pose_fraction = self.initial_pose_fractions[fraction_index]
-        initial_abs = goal_abs * pose_fraction
+        initial_abs = jnp.where(goal_abs == 0.0, jnp.zeros(3), goal_abs * pose_fraction)
         target_q = absolute_to_relative(initial_abs)
 
         difficulty = 1.0 - pose_fraction
