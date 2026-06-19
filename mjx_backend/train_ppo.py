@@ -97,8 +97,11 @@ def main() -> None:
     for i, stage in enumerate(stages[start_stage:], start=start_stage):
         stage_goals = stage["goals"]
         stage_timesteps = int(stage["timesteps"])
+        stage_env_config = {**config["env"], "allowed_goals": stage_goals}
+        if "initial_pose_probabilities" in stage:
+            stage_env_config["initial_pose_probabilities"] = stage["initial_pose_probabilities"]
         print(f"\n=== Stage {i+1}/{len(stages)}: goals={stage_goals}, timesteps={stage_timesteps:,} ===")
-        stage_env = TriPendulumMJXEnv({**config["env"], "allowed_goals": stage_goals})
+        stage_env = TriPendulumMJXEnv(stage_env_config)
         stage_train_fn = make_train_fn(config, num_timesteps=stage_timesteps, restore_params=params)
         make_policy, params, metrics = stage_train_fn(
             environment=stage_env,
