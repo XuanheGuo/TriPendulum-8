@@ -63,32 +63,45 @@ def main() -> None:
         config = yaml.safe_load(file)
     env = TriPendulumMJXEnv(config["env"])
     policy = load_policy(config, args.checkpoint, env)
-    step_fn = jax.jit(env.step)
+    episode_length = int(config["ppo"].get("episode_length", 1000))
+
+    @jax.jit
+    def run_episode(reset_rng: jax.Array, policy_rng: jax.Array, goal_index: int):
+        state = reset_goal(env, reset_rng, goal_index)
+
+        def step_fn(carry, _):
+            state, rng, total_reward = carry
+            rng, action_rng = jax.random.split(rng)
+            action, _ = policy(state.obs, action_rng)
+            state = env.step(state, action)
+            return (state, rng, total_reward + state.reward), None
+
+        (final_state, _, total_reward), _ = jax.lax.scan(
+            step_fn, (state, policy_rng, jnp.asarray(0.0)), None, length=episode_length
+        )
+        return (
+            final_state.metrics["success"],
+            final_state.metrics["track_collision"],
+            final_state.metrics["pose_error"],
+            total_reward,
+        )
+
+    batched_run = jax.jit(jax.vmap(
+        run_episode, in_axes=(0, 0, None)
+    ))
+
     results = {}
     for goal_index, goal_name in enumerate(GOAL_NAMES):
-        reset_fn = jax.jit(lambda rng: reset_goal(env, rng, goal_index))
-        successes, rewards, collisions, pose_errors = [], [], [], []
-        for episode in range(args.episodes):
-            state = reset_fn(jax.random.PRNGKey(10000 + episode))
-            total_reward = 0.0
-            rng = jax.random.PRNGKey(20000 + episode)
-            for _ in range(int(config["ppo"].get("episode_length", 1000))):
-                rng, action_rng = jax.random.split(rng)
-                action, _ = policy(state.obs, action_rng)
-                state = step_fn(state, action)
-                total_reward += float(state.reward)
-                if bool(state.done):
-                    break
-            successes.append(float(state.metrics["success"]))
-            collisions.append(float(state.metrics["track_collision"]))
-            pose_errors.append(float(state.metrics["pose_error"]))
-            rewards.append(total_reward)
+        reset_rngs = jax.random.split(jax.random.PRNGKey(10000), args.episodes)
+        policy_rngs = jax.random.split(jax.random.PRNGKey(20000), args.episodes)
+        successes, collisions, pose_errors, rewards = batched_run(reset_rngs, policy_rngs, goal_index)
         results[goal_name] = {
-            "success_rate": float(np.mean(successes)),
-            "avg_reward": float(np.mean(rewards)),
-            "avg_final_pose_error": float(np.mean(pose_errors)),
-            "track_collision_rate": float(np.mean(collisions)),
+            "success_rate": float(jnp.mean(successes)),
+            "avg_reward": float(jnp.mean(rewards)),
+            "avg_final_pose_error": float(jnp.mean(pose_errors)),
+            "track_collision_rate": float(jnp.mean(collisions)),
         }
+        print(f"{goal_name}: success={results[goal_name]['success_rate']:.2f}")
     with open(args.output, "w", encoding="utf-8") as file:
         json.dump(results, file, indent=2)
     print(json.dumps(results, indent=2))
