@@ -76,11 +76,17 @@ def main() -> None:
 
         def step_fn(carry, _):
             state, rng, total_reward, steps = carry
+            already_done = state.done > 0.5
             rng, action_rng = jax.random.split(rng)
             action, _ = policy(state.obs, action_rng)
-            state = env.step(state, action)
-            steps = steps + jnp.where(state.done, 0, 1)
-            return (state, rng, total_reward + state.reward, steps), None
+            new_state = env.step(state, action)
+            # Freeze state after done to prevent physics divergence / NaN
+            next_state = jax.tree_util.tree_map(
+                lambda n, o: jnp.where(already_done, o, n), new_state, state
+            )
+            total_reward = total_reward + jnp.where(already_done, 0.0, new_state.reward)
+            steps = steps + jnp.where(already_done, 0, 1)
+            return (next_state, rng, total_reward, steps), None
 
         (final_state, _, total_reward, steps), _ = jax.lax.scan(
             step_fn, (state, policy_rng, jnp.asarray(0.0), jnp.asarray(0)), None, length=episode_length
